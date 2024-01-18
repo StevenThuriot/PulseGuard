@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>PulseGuard</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito&family=Noto%20Color%20Emoji&display=swap"
+          rel="stylesheet">
+    <style>
+        html,
+        body {
+            font-family: 'Nunito', "Segoe UI", Roboto, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: #333;
+        }
+
+            body:before {
+                content: "";
+                width: 100%;
+                height: 20%;
+                background-image: url(img/background.png);
+                background-size: contain;
+                background-position: bottom right;
+                background-repeat: no-repeat;
+                opacity: 0.33;
+                bottom: 5px;
+                right: 5px;
+                position: fixed;
+                display: inline-block;
+                z-index: -1;
+            }
+
+        .animated {
+            max-height: max-content;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .hidden {
+            overflow: hidden;
+            max-height: 0;
+            transition: all 0.2s cubic-bezier(0, 1, 0, 1);
+        }
+
+        .group-container:not(.hidden) {
+            padding-left: 2em;
+        }
+
+            .group-container:not(.hidden)::before {
+                content: '';
+                height: calc(100% - 5.5em - 5px);
+                border-left: 2px solid #c4c3c3;
+                position: absolute;
+                margin-left: calc(-2em + 10px);
+                margin-top: 5em;
+                bottom: 0;
+                top: 0;
+            }
+
+            .group-container:not(.hidden) .card::before {
+                content: '';
+                width: calc(2em - 10px);
+                border-top: 2px solid #c4c3c3;
+                position: absolute;
+                margin-left: calc(-2em + 10px);
+                margin-top: 4.4em;
+            }
+
+            .group-container:not(.hidden) .card:last-child::after {
+                content: '';
+                background-color: #fff;
+                bottom: 5px;
+                left: calc(-2em + 8px);
+                position: absolute;
+                top: calc(50% + .4em + 1px);
+                width: 4px;
+                margin-bottom: -2em;
+            }
+
+        #cards {
+            margin: 8px;
+            padding: 0 3%;
+        }
+
+        .header-wrap {
+            border-bottom: 1px solid rgb(226, 226, 226);
+            margin-bottom: 1.2em;
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 999;
+        }
+
+            .header-wrap header {
+                display: flex;
+                -webkit-box-pack: justify;
+                justify-content: space-between;
+                -webkit-box-align: center;
+                align-items: center;
+                vertical-align: middle;
+                height: 74px;
+                padding: 0 8px;
+            }
+
+                .header-wrap header a {
+                    text-decoration: none;
+                }
+
+                    .header-wrap header a h2 {
+                        font-variant: small-caps;
+                        color: #345877;
+                    }
+
+                        .header-wrap header a h2::before {
+                            background-image: url('img/icon.png');
+                            background-size: 50px;
+                            background-repeat: no-repeat;
+                            vertical-align: -50%;
+                            display: inline-block;
+                            width: 66px;
+                            height: 50px;
+                            content: "";
+                        }
+
+        .card {
+            border: 1px solid rgb(236, 236, 236);
+            border-radius: 4px;
+            margin-bottom: 2em;
+            box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
+            transition: all 0.1s ease 0s;
+            position: relative;
+            background-color: #fffc;
+        }
+
+            .card:last-child {
+                margin-bottom: 0;
+            }
+
+        .card-label-container {
+            display: flex;
+            margin-bottom: 2px;
+        }
+
+            .card-label-container > .card-label-popup {
+                margin: auto 5px;
+            }
+
+                .card-label-container > .card-label-popup > img {
+                    height: .7em;
+                }
+
+        #cards > .card:not(:last-child)::after {
+            content: "";
+            position: absolute;
+            top: calc(100% + 1em);
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+
+        .card:hover {
+            border: 1px solid rgb(220, 214, 214);
+            box-shadow: 0 8px 16px 0 rgba(0, 0, 0, 0.2);
+        }
+
+        .container {
+            padding: 20px 20px 30px 20px;
+        }
+
+        .card-header {
+            cursor: pointer;
+        }
+
+        .card-label {
+            margin: 0 0 2px 2px;
+        }
+
+        .health-bar {
+            border: 1px solid rgb(236, 236, 236);
+            border-radius: 4px;
+            background-color: rgb(245, 245, 245);
+            padding: 2px;
+            transition: all 0.1s ease 0s;
+        }
+
+        .container-bar {
+            margin: 0 8px;
+        }
+
+            .container-bar > .health-bar.tiny {
+                transform: scaleY(0.35);
+                transition: all 0.1s ease 0s;
+            }
+
+        .health-bar rect {
+            height: 42px;
+            border: 1px solid rgb(236, 236, 236);
+            transition: all 0.1s ease 0s;
+            transform-box: fill-box;
+            transform-origin: center center;
+            transform: scaleY(0.875) scaleX(0.875);
+            fill: rgb(41, 177, 92);
+        }
+
+            .health-bar rect:hover {
+                transform: scaleY(1) scaleX(1.15);
+            }
+
+        .Healthy {
+            fill: rgb(41, 177, 92) !important;
+            color: rgb(41, 177, 92) !important;
+        }
+
+        .Unknown {
+            fill: rgb(50, 41, 177) !important;
+            color: rgb(50, 41, 177) !important;
+            font-style: italic;
+        }
+
+        .Degraded {
+            fill: rgb(177, 123, 41) !important;
+            color: rgb(177, 123, 41) !important;
+            font-weight: bold;
+        }
+
+        .Unhealthy {
+            fill: rgb(177, 41, 41) !important;
+            color: rgb(177, 41, 41) !important;
+            font-weight: bold;
+            text-decoration: underline;
+        }
+
+        #title-header h4 {
+            margin: auto 10px;
+            display: inline-block;
+            vertical-align: middle;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header-wrap">
+        <header id="page-header">
+            <a href="">
+                <h2>PulseGuard</h2>
+            </a>
+        </header>
+    </div>
+
+    <div id="cards">Loading...</div>
+
+    <script src="https://unpkg.com/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+    <script src="https://unpkg.com/tippy.js@6.3.7/dist/tippy-bundle.umd.min.js"></script>
+    <script>
+        (function () {
+            const groupFilter = decodeURIComponent(window.location.hash.substring(1)) || null;
+
+            if (!!groupFilter) {
+                document.title = `PulseGuard - ${groupFilter}`;
+            }
+
+            let totalMinutes = 720;
+            const urlParams = new URLSearchParams(window.location.search);
+            const minutes = urlParams.get('minutes');
+            if (minutes) {
+                totalMinutes = minutes;
+            }
+
+            const interval = 1;
+
+            let healthbarCount = 70;
+            if (document.body.clientWidth > 900) {
+                healthbarCount = ~~(healthbarCount * 1.5);
+            }
+
+            if (document.body.clientWidth > 1300) {
+                healthbarCount = ~~(healthbarCount * 1.5);
+            }
+
+            const bucketDuration = ((totalMinutes / interval) / healthbarCount) * 60 * 1000;
+
+            const now = new Date();
+            const bucketRanges = [];
+
+            for (let i = 0; i < healthbarCount; i++) {
+                const bucketStart = new Date(now.getTime() - ((healthbarCount - i) * bucketDuration));
+                const bucketEnd = new Date(bucketStart.getTime() + bucketDuration);
+
+                bucketRanges.push({ start: bucketStart, end: bucketEnd });
+            }
+
+            function getBucketIndexes(from, to) {
+                const indexes = [];
+                for (let i = 0; i < bucketRanges.length; i++) {
+                    const bucketRange = bucketRanges[i];
+                    if (to < bucketRange.start) {
+                        continue;
+                    }
+
+                    if (from > bucketRange.end) {
+                        continue;
+                    }
+
+                    indexes.push(i);
+                }
+
+                return indexes;
+            }
+
+            function renderGroupCard(groupName) {
+                const containerId = 'group-' + groupName.replace(/[^a-zA-Z0-9]/g, '');
+                const existing = document.getElementById(containerId + '-container');
+                if (!!existing) {
+                    return existing;
+                }
+
+                const card = document.createElement('div');
+                card.classList.add('card');
+
+                const container = document.createElement('div');
+                container.classList.add('container');
+                container.id = containerId;
+                card.appendChild(container);
+
+                const cardHeader = document.createElement('div');
+                cardHeader.classList.add('card-header');
+                container.appendChild(cardHeader);
+
+                const cardContainer = document.createElement('div');
+                cardContainer.id = containerId + '-container';
+                cardContainer.classList.add('hidden');
+                cardContainer.classList.add('animated');
+                cardContainer.classList.add('group-container');
+                container.appendChild(cardContainer);
+
+                const label = document.createElement('h4');
+                label.classList.add('card-label');
+                label.innerText = groupName;
+                cardHeader.appendChild(label);
+
+
+                cardHeader.addEventListener('click', function () {
+                    cardContainer.classList.toggle('hidden');
+                    document.getElementById('group-' + groupName.replace(/[^a-zA-Z0-9]/g, '') + '-bar').classList.toggle('tiny');
+                });
+
+                document.getElementById('cards').appendChild(card);
+                return cardContainer;
+            }
+
+            function createHealthBar(items) {
+                const bar = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                bar.setAttribute('height', '42');
+                bar.setAttribute('width', '100%');
+                bar.setAttribute('viewBox', '0 0 1000 42');
+                bar.setAttribute('preserveAspectRatio', 'none');
+                bar.classList.add('health-bar');
+
+                const rectWidth = (100 / healthbarCount);
+
+                const buckets = [];
+
+                for (let i = items.length - 1; i >= 0; i--) {
+                    const item = items[i];
+
+                    const from = new Date(item.from);
+                    const to = new Date(item.to);
+
+                    getBucketIndexes(from, to).forEach(index => {
+                        if (!buckets[index]) {
+                            buckets[index] = [];
+                        }
+                        buckets[index].push(item);
+                    });
+                }
+
+                for (let i = 0; i < healthbarCount; i++) {
+                    const rectangle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+
+                    let titletextContent;
+                    {
+                        const range = bucketRanges[i];
+
+                        const startDate = range.start.toLocaleDateString();
+                        const endDate = range.end.toLocaleDateString();
+
+                        const startTime = range.start.toLocaleTimeString();
+                        const endTime = range.end.toLocaleTimeString();
+
+                        if (startDate === endDate) {
+                            titletextContent = `${startDate}, ${startTime} - ${endTime}`;
+                        } else {
+                            titletextContent = `${startDate}, ${startTime} - ${endDate}, ${endTime}`;
+                        }
+                    }
+
+                    rectangle.setAttribute('ry', 2);
+                    rectangle.setAttribute('width', (rectWidth * 8).toFixed(2));
+                    rectangle.setAttribute('x', (rectWidth * i * 10).toFixed(2));
+
+                    const bucketItems = buckets[i];
+                    if (bucketItems && bucketItems.length > 1) {
+                        bucketItems.sort((a, b) => {
+                            if (a.message < b.message) {
+                                return -1;
+                            }
+
+                            if (a.message > b.message) {
+                                return 1;
+                            }
+
+                            return 0;
+                        });
+                    }
+
+                    if (!bucketItems || bucketItems.length === 0) {
+                        rectangle.classList.add('Unknown');
+                        titletextContent += '<br>No data available';
+                    } else {
+                        let status = 'Healthy';
+                        for (let j = 0; j < bucketItems.length; j++) {
+                            const currentStatus = bucketItems[j].state;
+                            if (currentStatus !== 'Healthy') {
+                                titletextContent += '<br><span class="' + bucketItems[j].state + '">' + bucketItems[j].state + '</span> - ' + bucketItems[j].message;
+                                if (currentStatus === 'Unhealthy') {
+                                    status = 'Unhealthy';
+                                    break;
+                                } else if (currentStatus === 'Degraded' && status !== 'Unhealthy') {
+                                    status = 'Degraded';
+                                }
+                            }
+                        }
+
+                        if (status === 'Healthy') {
+                            titletextContent += '<br>All systems are <span class="Healthy">healthy</span>';
+                        }
+
+                        rectangle.classList.add(status);
+                    }
+
+                    tippy(rectangle, {
+                        content: titletextContent,
+                        allowHTML: true
+                    });
+
+                    bar.appendChild(rectangle);
+                }
+
+                return bar;
+            }
+
+            function renderHealthCard(id, name, items, groupName) {
+                const card = document.createElement('div');
+                card.classList.add('card');
+
+                const container = document.createElement('div');
+                container.classList.add('container');
+                card.appendChild(container);
+
+                const labelContainer = document.createElement('div');
+                labelContainer.classList.add('card-label-container');
+                container.appendChild(labelContainer);
+
+                const label = document.createElement('h4');
+                label.classList.add('card-label');
+                label.innerText = name;
+                labelContainer.appendChild(label);
+
+                const popupLink = document.createElement('a');
+                popupLink.classList.add('card-label-popup');
+                popupLink.href = './details/' + id;
+                labelContainer.appendChild(popupLink);
+
+                const popupLinkImg = document.createElement('img');
+                popupLinkImg.src = 'img/popup-link-icon.svg';
+                popupLinkImg.alt = 'View details';
+
+                tippy(popupLinkImg, {
+                    content: popupLinkImg.alt
+                });
+
+                popupLink.appendChild(popupLinkImg);
+
+                function render() {
+                    const bar = createHealthBar(items);
+                    container.appendChild(bar);
+                }
+
+                let parent;
+                if (!!groupFilter || !groupName || groupName.length === 0) {
+                    render();
+                    parent = document.getElementById('cards');
+                } else {
+                    parent = renderGroupCard(groupName);
+
+                    const loading = document.createElement('div');
+                    loading.innerText = 'Loading...';
+                    container.appendChild(loading);
+
+                    const observer = new MutationObserver(function (mutations) {
+                        mutations.forEach(function (mutation) {
+                            if (mutation.attributeName === 'class') {
+                                if (mutation.target.classList.contains('hidden')) {
+                                    return;
+                                }
+
+                                render();
+                                container.removeChild(loading);
+
+                                observer.disconnect();
+                            }
+                        });
+                    });
+
+                    observer.observe(parent, { attributes: true, attributeFilter: ['class'] });
+                }
+
+                parent.appendChild(card);
+            }
+
+            fetch('api/1.0/pulses?minutes=' + totalMinutes)
+                .then(response => response.json())
+                .then(data => {
+                    if (!data || data.length === 0) {
+                        document.getElementById('cards').innerText = 'No data available';
+                        return;
+                    }
+
+                    document.getElementById('cards').innerHTML = '';
+
+                    if (!!groupFilter) {
+                        data = data.filter(x => x.group === groupFilter);
+                    } else {
+                        data.sort((a, b) => {
+                            const aGroup = a.group || '';
+                            const bGroup = b.group || '';
+
+                            if (!aGroup && !bGroup) {
+                                return 0;
+                            }
+
+                            if (!aGroup) {
+                                return 1;
+                            }
+
+                            if (!bGroup) {
+                                return -1;
+                            }
+
+                            return aGroup.toLowerCase().localeCompare(bGroup.toLowerCase());
+                        });
+                    }
+
+                    data.forEach(group => {
+                        const groupName = group.group;
+
+                        group.items.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
+                        group.items.forEach(item => renderHealthCard(item.id, item.name, item.items, groupName));
+
+                        if (!!groupFilter) {
+                            const header = document.createElement('div');
+                            header.id = 'title-header';
+                            document.getElementById('page-header').appendChild(header);
+
+                            const title = document.createElement('h4');
+                            title.textContent = groupName;
+                            header.appendChild(title);
+                        } else {
+                            if (!!groupName && groupName.length > 0 && group.items.length > 0) {
+                                const container = document.getElementById('group-' + groupName.replace(/[^a-zA-Z0-9]/g, '')).childNodes[0];
+
+                                const items = group.items.map(item => item.items.map(x => {
+                                    x.message = '<strong>' + item.name + '</strong> - ' + x.message;
+                                    return x;
+                                }));
+
+                                const flattenedItems = [].concat.apply([], items);
+
+                                const bar = createHealthBar(flattenedItems);
+                                bar.id = 'group-' + groupName.replace(/[^a-zA-Z0-9]/g, '') + '-bar';
+
+                                const containedBar = document.createElement('div');
+                                containedBar.classList.add('container-bar');
+                                containedBar.appendChild(bar);
+
+                                container.appendChild(containedBar);
+                            }
+                        }
+                    });
+                });
+        })();
+    </script>
+
+</body>
+
+</html>
