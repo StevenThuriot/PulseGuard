@@ -38,6 +38,14 @@ public sealed class OAuth2CredentialsService(ICredentialStore credentialStore, I
         }
     }
 
+    public void Purge(string id)
+    {
+        foreach (OAuth2Credentials credentials in _clients.Keys.Where(x => x.Id == id).ToList())
+        {
+            Purge(credentials);
+        }
+    }
+
     private sealed class TokenRequestClient(IHttpClientFactory httpClientFactory, OAuth2Credentials clientCredentials) : IDisposable
     {
         private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;

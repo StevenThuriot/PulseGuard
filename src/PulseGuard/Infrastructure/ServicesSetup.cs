@@ -2,6 +2,7 @@
 using Azure.ResourceManager;
 using PulseGuard.Services;
 using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Services.Admin;
 using Hosted = PulseGuard.Services.Hosted;
 
 namespace PulseGuard.Infrastructure;
@@ -29,6 +30,12 @@ internal static class ServicesSetup
         services.AddSingleton<EncryptionService>();
         services.AddScoped<OAuth2CredentialsService>();
         services.AddScoped<AuthService>();
+        services.AddScoped<CredentialAdministrationService>();
+        services.AddScoped<UserAdministrationService>();
+        services.AddScoped<PulseConfigurationAdministrationService>();
+        services.AddScoped<AgentConfigurationAdministrationService>();
+        services.AddScoped<WebhookAdministrationService>();
+        services.AddScoped<ConfigurationOverviewService>();
 
         services.AddHostedService<Hosted.PulseHostedService>();
         services.AddHostedService<Hosted.WebhookHostedService>();
