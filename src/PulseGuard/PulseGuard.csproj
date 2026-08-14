@@ -50,6 +50,9 @@
 		<ProjectReference Include="..\PulseGuard.Views.V3\PulseGuard.Views.V3.esproj">
 			<ReferenceOutputAssembly>false</ReferenceOutputAssembly>
 		</ProjectReference>
+		<ProjectReference Include="..\PulseGuard.Storage.Abstractions\PulseGuard.Storage.Abstractions.csproj" />
+		<ProjectReference Include="..\PulseGuard.Storage.Azure\PulseGuard.Storage.Azure.csproj" />
+		<ProjectReference Include="..\PulseGuard.Storage.Postgres\PulseGuard.Storage.Postgres.csproj" />
 	</ItemGroup>
 
 	<Target Name="TruncateSourceRevisionId" BeforeTargets="AddSourceRevisionToInformationalVersion" Condition="'$(SourceRevisionId)' != '' and $(SourceRevisionId.Length) &gt; 7">

@@ -13,7 +13,10 @@ using TableStorage;
 
 var builder = WebApplication.CreateBuilder(args);
 
-string storeConnectionString = builder.Configuration.GetConnectionString("PulseStore") ?? throw new NullReferenceException("PulseStore");
+builder.Services.ConfigureStorageProvider(builder.Configuration);
+
+string storeConnectionString = builder.Configuration.GetConnectionString("PulseStore") ?? throw new NullReferenceException("ConnectionStrings:PulseStore");
+string provider = builder.Configuration["StorageProvider"]!;
 builder.Services.Configure<PulseOptions>(builder.Configuration.GetSection("pulse"))
                 .PostConfigure<PulseOptions>(options => options.Store = storeConnectionString);
 
@@ -29,20 +32,23 @@ builder.Services.Configure<EncryptionOptions>(builder.Configuration.GetSection("
 builder.Services.Configure<BrotliCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
 builder.Services.Configure<GzipCompressionProviderOptions>(options => options.Level = CompressionLevel.Fastest);
 
-var createIfNotExists = builder.Environment.IsDevelopment() ? CreateIfNotExistsMode.Once : CreateIfNotExistsMode.Disabled;
-builder.Services.AddPulseContext(storeConnectionString,
-    x =>
-    {
-        x.CreateTableIfNotExists = createIfNotExists;
-        x.EnableFluentCompilationAtRuntime();
-    },
-    x =>
-    {
-        x.CreateContainerIfNotExists = createIfNotExists;
-        x.Serializer = new PulseBlobSerializer();
-        x.EnableCompilationAtRuntime();
-    }
-);
+if (provider.Equals("Azure", StringComparison.OrdinalIgnoreCase))
+{
+    var createIfNotExists = builder.Environment.IsDevelopment() ? CreateIfNotExistsMode.Once : CreateIfNotExistsMode.Disabled;
+    builder.Services.AddPulseContext(storeConnectionString,
+        x =>
+        {
+            x.CreateTableIfNotExists = createIfNotExists;
+            x.EnableFluentCompilationAtRuntime();
+        },
+        x =>
+        {
+            x.CreateContainerIfNotExists = createIfNotExists;
+            x.Serializer = new PulseBlobSerializer();
+            x.EnableCompilationAtRuntime();
+        }
+    );
+}
 
 bool authorized = builder.Services.ConfigureAuthentication(builder.Configuration);
 builder.Services.ConfigurePulseTelemetry(builder.Configuration);

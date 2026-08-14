@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using PulseGuard.Storage.Abstractions.Queues;
 using PulseGuard.Storage.Azure.Configuration;
 using PulseGuard.Storage.Azure.Queues;
+using PulseGuard.Storage.Abstractions.Contracts;
 
 namespace PulseGuard.Storage.Azure.DependencyInjection;
 
@@ -25,6 +26,7 @@ public static class AzureStorageServiceCollectionExtensions
                 .ValidateOnStart();
 
         services.AddSingleton<IStorageWorkQueue, AzureQueueWorkQueue>();
+        services.AddSingleton<IStorageHealthCheck, AzureStorageHealthCheck>();
         return services;
     }
 }
