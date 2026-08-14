@@ -1,6 +1,7 @@
 ﻿using Azure.Identity;
 using Azure.ResourceManager;
 using PulseGuard.Services;
+using PulseGuard.Storage.Abstractions.Contracts;
 using Hosted = PulseGuard.Services.Hosted;
 
 namespace PulseGuard.Infrastructure;
@@ -32,5 +33,10 @@ internal static class ServicesSetup
         services.AddHostedService<Hosted.PulseHostedService>();
         services.AddHostedService<Hosted.WebhookHostedService>();
         services.AddHostedService<Hosted.AsyncPulseStoreHostedService>();
+    }
+
+    public static void ConfigureAzureApplicationStorage(this IServiceCollection services)
+    {
+        services.AddScoped<IServiceConfigurationStore, AzureServiceConfigurationStore>();
     }
 }

@@ -34,6 +34,7 @@ builder.Services.Configure<GzipCompressionProviderOptions>(options => options.Le
 
 if (provider.Equals("Azure", StringComparison.OrdinalIgnoreCase))
 {
+    builder.Services.ConfigureAzureApplicationStorage();
     var createIfNotExists = builder.Environment.IsDevelopment() ? CreateIfNotExistsMode.Once : CreateIfNotExistsMode.Disabled;
     builder.Services.AddPulseContext(storeConnectionString,
         x =>

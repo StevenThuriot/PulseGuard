@@ -3,17 +3,20 @@ using PulseGuard.Agents;
 using PulseGuard.Checks;
 using PulseGuard.Entities;
 using PulseGuard.Models;
+using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Models;
 using System.Diagnostics;
 using System.Net.Sockets;
 using TableStorage.Linq;
 
 namespace PulseGuard.Services.Hosted;
 
-public sealed class PulseHostedService(IServiceProvider services, SignalService signalService, IOptionsMonitor<PulseOptions> options, ILogger<PulseHostedService> logger) : BackgroundService
+public sealed class PulseHostedService(IServiceProvider services, SignalService signalService, IOptionsMonitor<PulseOptions> options, IServiceConfigurationStore configurationStore, ILogger<PulseHostedService> logger) : BackgroundService
 {
     private readonly IServiceProvider _services = services;
     private readonly SignalService _signalService = signalService;
     private readonly IOptionsMonitor<PulseOptions> _options = options;
+    private readonly IServiceConfigurationStore _configurationStore = configurationStore;
     private readonly ILogger<PulseHostedService> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -45,10 +48,10 @@ public sealed class PulseHostedService(IServiceProvider services, SignalService 
     {
         using var scope = _services.CreateScope();
 
-        var context = scope.ServiceProvider.GetRequiredService<PulseContext>();
-
-        var configurations = await context.Configurations.Where(c => c.Enabled).ToListAsync(token);
-        var agentConfigurations = await context.AgentConfigurations.Where(c => c.Enabled).ToListAsync(token);
+        IReadOnlyList<PulseConfigurationRecord> configurationRecords = await _configurationStore.GetPulseConfigurationsAsync(true, token);
+        IReadOnlyList<AgentConfigurationRecord> agentConfigurationRecords = await _configurationStore.GetAgentConfigurationsAsync(true, token);
+        var configurations = configurationRecords.Select(ToPulseConfiguration).ToList();
+        var agentConfigurations = agentConfigurationRecords.Select(ToAgentConfiguration).ToList();
 
         var store = scope.ServiceProvider.GetRequiredService<AsyncPulseStoreService>();
         var authService = scope.ServiceProvider.GetRequiredService<AuthService>();
@@ -58,9 +61,8 @@ public sealed class PulseHostedService(IServiceProvider services, SignalService 
         int simultaneousPulses = _options.CurrentValue.SimultaneousPulses;
         using SemaphoreSlim semaphore = new(simultaneousPulses, simultaneousPulses); // rate gate
 
-        var identifiers = await context.Settings.WhereUniqueIdentifier()
-                                       .SelectFields(x => new { x.Id, x.Group, x.Name })
-                                       .ToDictionaryAsync(x => x.Id, x => (x.Group, x.Name), cancellationToken: token);
+        var identifiers = (await _configurationStore.GetServiceIdentifiersAsync(token))
+            .ToDictionary(x => x.Key, x => (x.Value.Group, x.Value.Name));
 
         List<Task> checks = new(configurations.Count + agentConfigurations.Count);
 
@@ -125,6 +127,36 @@ public sealed class PulseHostedService(IServiceProvider services, SignalService 
             }
         }
     }
+
+    private static PulseConfiguration ToPulseConfiguration(PulseConfigurationRecord record) => new()
+    {
+        Group = record.Group,
+        Name = record.Name,
+        Location = record.Location,
+        Type = Enum.Parse<PulseCheckType>(record.Type, true),
+        Timeout = record.TimeoutMilliseconds,
+        DegrationTimeout = record.DegradationTimeoutMilliseconds,
+        Enabled = record.Enabled,
+        IgnoreSslErrors = record.IgnoreSslErrors,
+        Sqid = record.Sqid,
+        ComparisonValue = record.ComparisonValue,
+        Headers = record.Headers,
+        AuthenticationId = record.AuthenticationId
+    };
+
+    private static PulseAgentConfiguration ToAgentConfiguration(AgentConfigurationRecord record) => new()
+    {
+        Sqid = record.Sqid,
+        Type = record.Type,
+        Location = record.Location,
+        ApplicationName = record.ApplicationName,
+        SubscriptionId = record.SubscriptionId,
+        BuildDefinitionId = record.BuildDefinitionId,
+        StageName = record.StageName,
+        Enabled = record.Enabled,
+        Headers = record.Headers,
+        AuthenticationId = record.AuthenticationId
+    };
 
     private async Task CheckPulseAsync(IAgentCheck check, AsyncPulseStoreService store, CancellationToken token)
     {
