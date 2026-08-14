@@ -1,0 +1,40 @@
+using PulseGuard.Entities;
+using PulseGuard.Models;
+using Xunit;
+
+namespace PulseGuard.Tests;
+
+public sealed class LegacyStorageBehaviorTests
+{
+    [Fact]
+    public void PulseContinuationToken_RoundTripsUnixTimestamp()
+    {
+        const long timestamp = 1_750_000_000;
+
+        string token = Pulse.CreateContinuationToken(DateTimeOffset.FromUnixTimeSeconds(timestamp));
+
+        Assert.Equal(timestamp, Pulse.ConvertToUnixTimeSeconds(token));
+    }
+
+    [Fact]
+    public void PulseCheckResult_AppendValueUsesDayAndSqidPartitioning()
+    {
+        DateTimeOffset creation = new(2026, 8, 14, 12, 30, 0, TimeSpan.Zero);
+        PulseReport report = new(
+            new PulseConfiguration
+            {
+                Sqid = "abc123",
+                Group = "group",
+                Name = "name"
+            },
+            PulseStates.Healthy,
+            "ok",
+            null);
+
+        (string partition, string row, BinaryData data) = PulseCheckResult.GetAppendValue(report, creation, 42);
+
+        Assert.Equal("20260814", partition);
+        Assert.Equal("abc123", row);
+        Assert.Contains("42", data.ToString());
+    }
+}

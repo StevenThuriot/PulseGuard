@@ -11,4 +11,5 @@
     <Deploy />
   </Project>
   <Project Path="PulseGuard/PulseGuard.csproj" />
+  <Project Path="PulseGuard.Tests/PulseGuard.Tests.csproj" />
 </Solution>
