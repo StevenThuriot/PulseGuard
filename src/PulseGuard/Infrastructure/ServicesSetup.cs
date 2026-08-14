@@ -40,6 +40,7 @@ internal static class ServicesSetup
         services.AddScoped<IServiceConfigurationStore, AzureServiceConfigurationStore>();
         services.AddScoped<ICredentialStore, AzureCredentialStore>();
         services.AddScoped<IWebhookStore, AzureWebhookStore>();
+        services.AddScoped<IUserStore, AzureUserStore>();
         services.AddScoped<IHealthHistoryStore, AzureHealthHistoryStore>();
         services.AddScoped<IAgentHistoryStore, AzureAgentHistoryStore>();
         services.AddScoped<IDeploymentStore, AzureDeploymentStore>();

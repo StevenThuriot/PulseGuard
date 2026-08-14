@@ -15,6 +15,7 @@ internal sealed class PulseGuardDbContext(DbContextOptions<PulseGuardDbContext> 
     internal DbSet<DeploymentEntity> Deployments => Set<DeploymentEntity>();
     internal DbSet<CredentialEntity> Credentials => Set<CredentialEntity>();
     internal DbSet<WebhookEntity> Webhooks => Set<WebhookEntity>();
+    internal DbSet<UserEntity> Users => Set<UserEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -145,6 +146,15 @@ internal sealed class PulseGuardDbContext(DbContextOptions<PulseGuardDbContext> 
             entity.HasIndex(x => x.Id).IsUnique();
             entity.Property(x => x.IdValue).HasColumnName("id_value");
             entity.Property(x => x.AuthenticationId).HasColumnName("authentication_id");
+        });
+
+        modelBuilder.Entity<UserEntity>(entity =>
+        {
+            entity.ToTable("users");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.UserId).IsUnique();
+            entity.Property(x => x.LastVisited).HasColumnName("last_visited");
+            entity.Property(x => x.Roles).HasColumnType("text[]");
         });
     }
 }

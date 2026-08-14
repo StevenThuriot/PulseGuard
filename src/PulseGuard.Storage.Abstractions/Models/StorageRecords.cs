@@ -97,6 +97,12 @@ public sealed record WebhookRecord(
     string Type,
     string? AuthenticationId);
 
+public sealed record UserRecord(
+    string UserId,
+    string? Nickname,
+    IReadOnlyList<string> Roles,
+    DateTimeOffset? LastVisited);
+
 public sealed record HealthHistoryQuery(
     string Sqid,
     DateTimeOffset? From = null,

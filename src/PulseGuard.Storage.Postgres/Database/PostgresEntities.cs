@@ -139,3 +139,12 @@ internal sealed class WebhookEntity
     public string Type { get; set; } = string.Empty;
     public string? AuthenticationId { get; set; }
 }
+
+internal sealed class UserEntity
+{
+    public long Id { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public string? Nickname { get; set; }
+    public List<string> Roles { get; set; } = [];
+    public DateTimeOffset? LastVisited { get; set; }
+}

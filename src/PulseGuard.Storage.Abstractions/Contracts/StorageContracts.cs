@@ -50,6 +50,13 @@ public interface IWebhookStore
     public Task<IReadOnlyList<WebhookRecord>> GetEnabledAsync(CancellationToken cancellationToken);
 }
 
+public interface IUserStore
+{
+    public Task<UserRecord?> GetAsync(string userId, CancellationToken cancellationToken);
+
+    public Task UpsertLastVisitedAsync(UserRecord user, DateTimeOffset lastVisited, CancellationToken cancellationToken);
+}
+
 public interface IStorageMaintenance
 {
     public Task RunAsync(CancellationToken cancellationToken);

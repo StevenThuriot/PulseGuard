@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using PulseGuard.Entities;
+using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Models;
 using System.Security.Claims;
 using TableStorage;
 
@@ -122,8 +124,8 @@ internal static class AuthSetup
 
                                 async Task Enrich()
                                 {
-                                    PulseContext db = ctx.HttpContext.RequestServices.GetRequiredService<PulseContext>();
-                                    User? user = await db.Settings.FindUserAsync(identity.Name);
+                                    IUserStore userStore = ctx.HttpContext.RequestServices.GetRequiredService<IUserStore>();
+                                    UserRecord? user = await userStore.GetAsync(identity.Name, ctx.HttpContext.RequestAborted);
 
                                     if (user is null)
                                     {
@@ -137,19 +139,14 @@ internal static class AuthSetup
                                         string? lastname = identity.FindFirst("lastname")?.Value;
                                         string nickname = $"{firstname} {lastname}".Trim();
 
-                                        user = new()
-                                        {
-                                            UserId = identity.Name,
-                                            Nickname = nickname.Length is 0 ? null : nickname,
-                                        };
+                                             user = new(identity.Name, nickname.Length is 0 ? null : nickname, [], null);
                                     }
                                     else
                                     {
-                                        identity.AddClaims(user.GetRoles().Select(r => new Claim(identity.RoleClaimType, r)));
+                                        identity.AddClaims(user.Roles.Select(r => new Claim(identity.RoleClaimType, r)));
                                     }
 
-                                    user.LastVisited = DateTimeOffset.UtcNow;
-                                    await db.Settings.UpsertEntityAsync(user, Azure.Data.Tables.TableUpdateMode.Merge);
+                                    await userStore.UpsertLastVisitedAsync(user, DateTimeOffset.UtcNow, ctx.HttpContext.RequestAborted);
                                 }
                             }
 

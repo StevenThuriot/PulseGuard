@@ -46,6 +46,7 @@ public static class PostgresStorageServiceCollectionExtensions
         services.AddScoped<IDeploymentStore, PostgresDeploymentStore>();
         services.AddScoped<ICredentialStore, PostgresCredentialStore>();
         services.AddScoped<IWebhookStore, PostgresWebhookStore>();
+        services.AddScoped<IUserStore, PostgresUserStore>();
 
         return services;
     }
