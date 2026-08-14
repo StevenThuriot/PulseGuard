@@ -7,13 +7,12 @@ using TableStorage.Linq;
 
 namespace PulseGuard.Services.Hosted;
 
-internal sealed class WebhookHostedService(WebhookService webhookClient, SignalService signalService, IHttpClientFactory factory, IWebhookStore webhookStore, AuthService authService, ILogger<WebhookHostedService> logger) : BackgroundService
+internal sealed class WebhookHostedService(WebhookService webhookClient, SignalService signalService, IHttpClientFactory factory, IServiceProvider services, ILogger<WebhookHostedService> logger) : BackgroundService
 {
     private readonly WebhookService _webhookClient = webhookClient;
     private readonly SignalService _signalService = signalService;
     private readonly IHttpClientFactory _httpClientFactory = factory;
-    private readonly IWebhookStore _webhookStore = webhookStore;
-    private readonly AuthService _authService = authService;
+    private readonly IServiceProvider _services = services;
     private readonly ILogger<WebhookHostedService> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -23,14 +22,17 @@ internal sealed class WebhookHostedService(WebhookService webhookClient, SignalS
             try
             {
                 await _signalService.WaitAsync(stoppingToken);
+                using IServiceScope scope = _services.CreateScope();
+                IWebhookStore webhookStore = scope.ServiceProvider.GetRequiredService<IWebhookStore>();
+                AuthService authService = scope.ServiceProvider.GetRequiredService<AuthService>();
 
                 // Our search is not optimized on table side anyway, so it's most likely cheaper to just fetch all enabled webhooks and filter in memory
-                IReadOnlyList<WebhookRecord> records = await _webhookStore.GetEnabledAsync(stoppingToken);
+                IReadOnlyList<WebhookRecord> records = await webhookStore.GetEnabledAsync(stoppingToken);
                 ILookup<WebhookType, Entities.Webhook> webhooks = records
                     .Select(ToWebhook)
                     .ToLookup(x => x.Type);
 
-                await HandleWebhooks(webhooks, stoppingToken);
+                await HandleWebhooks(webhooks, authService, stoppingToken);
             }
             catch (Exception ex)
             {
@@ -56,11 +58,11 @@ internal sealed class WebhookHostedService(WebhookService webhookClient, SignalS
         return webhooks.Where(x => (x.Group == "*" || x.Group == group) && (x.Name == "*" || x.Name == name));
     }
 
-    private async Task Handle(HttpClient client, ThresholdWebhookEvent webhookEvent, IEnumerable<Entities.Webhook> webhooks, CancellationToken cancellationToken)
+    private async Task Handle(HttpClient client, ThresholdWebhookEvent webhookEvent, IEnumerable<Entities.Webhook> webhooks, AuthService authService, CancellationToken cancellationToken)
     {
         foreach (var group in FilterWebhooks(webhooks, webhookEvent.Group, webhookEvent.Name).GroupBy(x => x.AuthenticationId ?? ""))
         {
-            AuthHeader? auth = await _authService.GetAsync(group.First(), cancellationToken);
+            AuthHeader? auth = await authService.GetAsync(group.First(), cancellationToken);
 
             foreach (Entities.Webhook webhook in group)
             {
@@ -69,7 +71,7 @@ internal sealed class WebhookHostedService(WebhookService webhookClient, SignalS
         }
     }
 
-    private async Task HandleWebhooks(ILookup<WebhookType, Entities.Webhook> webhooks, CancellationToken stoppingToken)
+    private async Task HandleWebhooks(ILookup<WebhookType, Entities.Webhook> webhooks, AuthService authService, CancellationToken stoppingToken)
     {
         Lazy<HttpClient> client = new(() => _httpClientFactory.CreateClient("Webhooks"));
         IEnumerable<Entities.Webhook> allHooks = webhooks[WebhookType.All];
@@ -81,12 +83,12 @@ internal sealed class WebhookHostedService(WebhookService webhookClient, SignalS
                 if (message.WebhookEvent is WebhookEvent webhookEvent)
                 {
                     var relevantHooks = webhooks[WebhookType.StateChange].Concat(allHooks);
-                    await Handle(client.Value, webhookEvent, relevantHooks, stoppingToken);
+                    await Handle(client.Value, webhookEvent, relevantHooks, authService, stoppingToken);
                 }
                 else if (message.WebhookEvent is ThresholdWebhookEvent thresholdWebhookEvent)
                 {
                     var relevantHooks = webhooks[WebhookType.ThresholdBreach].Concat(allHooks);
-                    await Handle(client.Value, thresholdWebhookEvent, relevantHooks, stoppingToken);
+                    await Handle(client.Value, thresholdWebhookEvent, relevantHooks, authService, stoppingToken);
                 }
                 else
                 {
@@ -102,11 +104,11 @@ internal sealed class WebhookHostedService(WebhookService webhookClient, SignalS
         }
     }
 
-    private async Task Handle(HttpClient client, WebhookEvent webhookEvent, IEnumerable<Entities.Webhook> webhooks, CancellationToken cancellationToken)
+    private async Task Handle(HttpClient client, WebhookEvent webhookEvent, IEnumerable<Entities.Webhook> webhooks, AuthService authService, CancellationToken cancellationToken)
     {
         foreach (var group in FilterWebhooks(webhooks, webhookEvent.Group, webhookEvent.Name).GroupBy(x => x.AuthenticationId ?? ""))
         {
-            AuthHeader? auth = await _authService.GetAsync(group.First(), cancellationToken);
+            AuthHeader? auth = await authService.GetAsync(group.First(), cancellationToken);
 
             foreach (Entities.Webhook webhook in group)
             {

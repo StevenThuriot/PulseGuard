@@ -11,12 +11,11 @@ using TableStorage.Linq;
 
 namespace PulseGuard.Services.Hosted;
 
-public sealed class PulseHostedService(IServiceProvider services, SignalService signalService, IOptionsMonitor<PulseOptions> options, IServiceConfigurationStore configurationStore, ILogger<PulseHostedService> logger) : BackgroundService
+public sealed class PulseHostedService(IServiceProvider services, SignalService signalService, IOptionsMonitor<PulseOptions> options, ILogger<PulseHostedService> logger) : BackgroundService
 {
     private readonly IServiceProvider _services = services;
     private readonly SignalService _signalService = signalService;
     private readonly IOptionsMonitor<PulseOptions> _options = options;
-    private readonly IServiceConfigurationStore _configurationStore = configurationStore;
     private readonly ILogger<PulseHostedService> _logger = logger;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -47,9 +46,10 @@ public sealed class PulseHostedService(IServiceProvider services, SignalService 
     private async Task CheckPulseAsync(CancellationToken token)
     {
         using var scope = _services.CreateScope();
+        IServiceConfigurationStore configurationStore = scope.ServiceProvider.GetRequiredService<IServiceConfigurationStore>();
 
-        IReadOnlyList<PulseConfigurationRecord> configurationRecords = await _configurationStore.GetPulseConfigurationsAsync(true, token);
-        IReadOnlyList<AgentConfigurationRecord> agentConfigurationRecords = await _configurationStore.GetAgentConfigurationsAsync(true, token);
+        IReadOnlyList<PulseConfigurationRecord> configurationRecords = await configurationStore.GetPulseConfigurationsAsync(true, token);
+        IReadOnlyList<AgentConfigurationRecord> agentConfigurationRecords = await configurationStore.GetAgentConfigurationsAsync(true, token);
         var configurations = configurationRecords.Select(ToPulseConfiguration).ToList();
         var agentConfigurations = agentConfigurationRecords.Select(ToAgentConfiguration).ToList();
 
@@ -61,7 +61,7 @@ public sealed class PulseHostedService(IServiceProvider services, SignalService 
         int simultaneousPulses = _options.CurrentValue.SimultaneousPulses;
         using SemaphoreSlim semaphore = new(simultaneousPulses, simultaneousPulses); // rate gate
 
-        var identifiers = (await _configurationStore.GetServiceIdentifiersAsync(token))
+        var identifiers = (await configurationStore.GetServiceIdentifiersAsync(token))
             .ToDictionary(x => x.Key, x => (x.Value.Group, x.Value.Name));
 
         List<Task> checks = new(configurations.Count + agentConfigurations.Count);
