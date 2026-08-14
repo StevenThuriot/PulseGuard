@@ -2,6 +2,7 @@
 using Azure.ResourceManager;
 using PulseGuard.Services;
 using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Administration;
 using PulseGuard.Services.Admin;
 using Hosted = PulseGuard.Services.Hosted;
 
@@ -51,6 +52,8 @@ internal static class ServicesSetup
         services.AddScoped<IHealthHistoryStore, AzureHealthHistoryStore>();
         services.AddScoped<IAgentHistoryStore, AzureAgentHistoryStore>();
         services.AddScoped<IDeploymentStore, AzureDeploymentStore>();
+        services.AddScoped<ICredentialAdministrationStore, AzureCredentialAdministrationStore>();
+        services.AddScoped<IUserAdministrationStore, AzureUserAdministrationStore>();
         services.AddHostedService<AzureStorageCleanupHostedService>();
     }
 }
