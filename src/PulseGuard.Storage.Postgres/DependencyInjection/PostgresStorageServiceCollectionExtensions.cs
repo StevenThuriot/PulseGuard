@@ -41,6 +41,7 @@ public static class PostgresStorageServiceCollectionExtensions
         services.AddHostedService<PostgresSchemaHostedService>();
         services.AddSingleton<PulseGuard.Storage.Abstractions.Queues.IStorageWorkQueue, RabbitMqWorkQueue>();
         services.AddScoped<IServiceConfigurationStore, PostgresServiceConfigurationStore>();
+        services.AddScoped<IHealthHistoryStore, PostgresHealthHistoryStore>();
 
         return services;
     }
