@@ -1,6 +1,7 @@
 using PulseGuard.Entities;
 using PulseGuard.Models;
 using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Administration;
 using PulseGuard.Storage.Abstractions.Queues;
 using PulseGuard.Storage.Abstractions.Models;
 using Xunit;
@@ -66,5 +67,22 @@ public sealed class LegacyStorageBehaviorTests
         Assert.Equal("subscription", record.SubscriptionId);
         Assert.Equal(42, record.BuildDefinitionId);
         Assert.Equal("stage", record.StageName);
+    }
+
+    [Fact]
+    public void AdminStorageResult_ModelsProviderIndependentOutcomes()
+    {
+        Assert.True(StorageOperationResult.Success().Succeeded);
+        Assert.True(StorageOperationResult.Missing().NotFound);
+        Assert.True(StorageOperationResult.Conflicted().Conflict);
+    }
+
+    [Fact]
+    public void AdminContracts_DoNotExposeAzureOrEfTypes()
+    {
+        Assert.DoesNotContain(typeof(ICredentialAdministrationStore).GetMethods(), method =>
+            method.ToString()!.Contains("PulseContext", StringComparison.Ordinal));
+        Assert.DoesNotContain(typeof(IWebhookAdministrationStore).GetMethods(), method =>
+            method.ToString()!.Contains("DbContext", StringComparison.Ordinal));
     }
 }
