@@ -496,44 +496,32 @@ public static class AdminRoutes
 
         private void CreateNormalMappings()
         {
-            builder.MapGet("{id}", static async (string id, PulseContext context, CancellationToken token) =>
-            {
-                var configuration = await context.Configurations.Where(x => x.Sqid == id).FirstOrDefaultAsync(token);
+             builder.MapGet("{id}", static async (string id, PulseConfigurationAdministrationService service, CancellationToken token) =>
+             {
+                 StoredPulseConfiguration? configuration = await service.GetAsync(id, token);
 
                 if (configuration is null)
                 {
                     return Results.NotFound();
                 }
 
-                var credential = ((IHaveCredentials)configuration).GetCredential();
-                CredentialOverview? credentialOverview;
-                if (credential.HasValue)
-                {
-                    var (credType, credId) = credential.GetValueOrDefault();
-                    credentialOverview = new(credType, credId);
-                }
-                else
-                {
-                    credentialOverview = null;
-                }
-
-                return Results.Ok(new PulseCreationRequest()
+                 return Results.Ok(new PulseCreationRequest()
                 {
                     Group = configuration.Group,
                     Name = configuration.Name,
-                    Type = configuration.Type,
+                     Type = Enum.Parse<PulseCheckType>(configuration.Type, true),
                     Location = configuration.Location,
                     Timeout = configuration.Timeout,
-                    DegrationTimeout = configuration.DegrationTimeout,
+                     DegrationTimeout = configuration.DegradationTimeout,
                     Enabled = configuration.Enabled,
                     IgnoreSslErrors = configuration.IgnoreSslErrors,
                     ComparisonValue = configuration.ComparisonValue,
-                    Headers = configuration.GetHeaders().ToDictionary(x => x.name, x => x.values),
-                    Credential = credentialOverview
+                     Headers = ParseHeaders(configuration.Headers),
+                     Credential = ToCredentialOverview(configuration.CredentialType, configuration.CredentialId)
                 });
             });
 
-            builder.MapPost("", static async (PulseCreationRequest request, PulseStore store, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
+             builder.MapPost("", static async (PulseCreationRequest request, PulseConfigurationAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
             {
                 if (request.Type is PulseCheckType.Json or PulseCheckType.Contains && string.IsNullOrWhiteSpace(request.ComparisonValue))
                 {
@@ -545,114 +533,88 @@ public static class AdminRoutes
                     return Results.BadRequest("DegrationTimeout must be less than Timeout.");
                 }
 
-                string sqid = await store.GenerateSqid(request.Group, request.Name, token);
-                PulseConfiguration config = new()
-                {
-                    Group = request.Group,
-                    Name = request.Name,
-                    Sqid = sqid,
-                    Type = request.Type,
-                    Location = request.Location,
-                    Timeout = request.Timeout,
-                    DegrationTimeout = request.DegrationTimeout,
-                    Enabled = request.Enabled,
-                    IgnoreSslErrors = request.IgnoreSslErrors,
-                    ComparisonValue = request.ComparisonValue,
-                    Headers = PulseConfiguration.CreateHeaders(request.Headers)
-                };
+                 StoredServiceIdentifier? identifier = await service.ReserveIdentifierAsync(request.Group, request.Name, token);
+                  if (identifier is null)
+                  {
+                      logger.ErrorCreatingNormalConfiguration(new InvalidOperationException("Service identifier already exists."));
+                      return Results.Conflict();
+                  }
 
-                ((IHaveCredentials)config).SetCredential(request.Credential?.Type, request.Credential?.Id);
+                  StoredPulseConfiguration config = ToStoredPulseConfiguration(identifier.Id, request);
+                 StorageOperationResult result = await service.CreateAsync(config, token);
+                  if (result.Conflict)
+                  {
+                      logger.ErrorCreatingNormalConfiguration(new InvalidOperationException("Pulse configuration creation conflicted."));
+                      return Results.Conflict();
+                  }
 
-                try
-                {
-                    await context.Configurations.AddEntityAsync(config, token);
-
-                    logger.CreatedNormalConfiguration(sqid, request.Type.ToString());
-                    return Results.Created();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorCreatingNormalConfiguration(ex);
-                    return Results.Conflict();
-                }
+                  logger.CreatedNormalConfiguration(identifier.Id, request.Type.ToString());
+                 return Results.Created();
             });
 
-            builder.MapPut("{id}", static async (string id, PulseCreationRequest request, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
+             builder.MapPut("{id}", static async (string id, PulseCreationRequest request, PulseConfigurationAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
             {
                 if (request.Type is PulseCheckType.Json or PulseCheckType.Contains && string.IsNullOrWhiteSpace(request.ComparisonValue))
                 {
                     return Results.BadRequest($"ComparisonValue is required for {request.Type} type.");
                 }
 
-                PulseConfiguration config = new()
-                {
-                    Group = request.Group,
-                    Name = request.Name,
-                    Sqid = id,
-                    Type = request.Type,
-                    Location = request.Location,
-                    Timeout = request.Timeout,
-                    DegrationTimeout = request.DegrationTimeout,
-                    Enabled = request.Enabled,
-                    IgnoreSslErrors = request.IgnoreSslErrors,
-                    ComparisonValue = request.ComparisonValue,
-                    Headers = PulseConfiguration.CreateHeaders(request.Headers)
-                };
+                 StorageOperationResult result = await service.UpdateAsync(ToStoredPulseConfiguration(id, request), token);
+                  if (result.NotFound)
+                  {
+                      return Results.NotFound();
+                  }
 
-                ((IHaveCredentials)config).SetCredential(request.Credential?.Type, request.Credential?.Id);
+                  if (result.Conflict)
+                 {
+                     logger.ErrorUpdatingNormalConfiguration(new InvalidOperationException("Pulse configuration update conflicted."), id, request.Type.ToString());
+                     return Results.Conflict();
+                 }
 
-                try
-                {
-                    await context.Configurations.UpdateEntityAsync(config, ETag.All, TableUpdateMode.Replace, token);
-
-                    logger.UpdatedNormalConfiguration(id, request.Type.ToString());
-                    return Results.Created();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorUpdatingNormalConfiguration(ex, id, request.Type.ToString());
-                    return Results.Conflict();
-                }
+                  logger.UpdatedNormalConfiguration(id, request.Type.ToString());
+                 return Results.Created();
             });
 
-            builder.MapPut("{id}/{enabled}", static async (string id, bool enabled, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                var config = await context.Configurations.FirstOrDefaultAsync(x => x.Sqid == id, token);
-                if (config is null)
+             builder.MapPut("{id}/{enabled}", static async (string id, bool enabled, PulseConfigurationAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                 StorageOperationResult result = await service.SetEnabledAsync(id, enabled, token);
+                 if (result.NotFound)
                 {
                     return Results.NotFound();
                 }
 
-                config.Enabled = enabled;
+                  if (result.Conflict)
+                  {
+                      logger.ErrorUpdatingNormalConfigurationEnabled(new InvalidOperationException("Pulse configuration update conflicted."), id, enabled);
+                      return Results.Conflict();
+                  }
 
-                try
-                {
-                    await context.Configurations.UpdateEntityAsync(config, token);
-
-                    logger.UpdatedNormalConfigurationEnabled(id, enabled);
-                    return Results.NoContent();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorUpdatingNormalConfigurationEnabled(ex, id, enabled);
-                    return Results.Conflict();
-                }
+                  logger.UpdatedNormalConfigurationEnabled(id, enabled);
+                 return Results.NoContent();
             });
 
-            builder.MapDelete("{id}", static async (string id, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                var configuration = await context.Configurations.Where(x => x.Sqid == id).FirstOrDefaultAsync(token);
-
-                if (configuration is null)
+             builder.MapDelete("{id}", static async (string id, PulseConfigurationAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                 StorageOperationResult result = await service.DeleteAsync(id, token);
+                 if (result.NotFound)
                 {
                     return Results.NotFound();
                 }
 
-                await context.Configurations.DeleteEntityAsync(configuration, token);
-
-                logger.DeletedNormalConfiguration(id);
+                 logger.DeletedNormalConfiguration(id);
                 return Results.NoContent();
-            });
+             });
+
+             static Dictionary<string, string> ParseHeaders(string? headers)
+                 => string.IsNullOrEmpty(headers)
+                     ? []
+                     : headers.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(x => x.Split(':', 2)).ToDictionary(x => x[0], x => x[1]);
+
+             static CredentialOverview? ToCredentialOverview(string? type, string? id)
+                 => type is null || id is null ? null : new CredentialOverview(Enum.Parse<CredentialType>(type, true), id);
+
+             static StoredPulseConfiguration ToStoredPulseConfiguration(string id, PulseCreationRequest request)
+                 => new(id, request.Group, request.Name, request.Type.ToString(), request.Location, request.Timeout, request.DegrationTimeout, request.Enabled, request.IgnoreSslErrors, request.ComparisonValue, PulseConfiguration.CreateHeaders(request.Headers), request.Credential?.Type.ToString(), request.Credential?.Id);
         }
     }
 }
