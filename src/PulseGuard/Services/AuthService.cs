@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Caching.Memory;
 using PulseGuard.Entities;
+using PulseGuard.Storage.Abstractions.Contracts;
 using System.Text;
 
 namespace PulseGuard.Services;
@@ -9,9 +10,9 @@ public sealed record AuthHeader(string Header, string Value)
     public void ApplyTo(HttpRequestMessage request) => request.Headers.TryAddWithoutValidation(Header, Value);
 }
 
-public sealed class AuthService(PulseContext context, OAuth2CredentialsService tokenService, IMemoryCache cache, EncryptionService encryptionService)
+public sealed class AuthService(ICredentialStore credentialStore, OAuth2CredentialsService tokenService, IMemoryCache cache, EncryptionService encryptionService)
 {
-    private readonly PulseContext _context = context;
+    private readonly ICredentialStore _credentialStore = credentialStore;
     private readonly OAuth2CredentialsService _tokenService = tokenService;
     private readonly IMemoryCache _cache = cache;
     private readonly EncryptionService _encryptionService = encryptionService;
@@ -76,10 +77,10 @@ public sealed class AuthService(PulseContext context, OAuth2CredentialsService t
 
     private async Task<AuthHeader?> GetBasicAuthenticationAsync(string id, CancellationToken token)
     {
-        var credentials = await _context.Credentials.FindBasicCredentialsAsync(id, token)
+        var credentials = await _credentialStore.GetAsync(id, CredentialType.Basic.ToString(), token)
                                     ?? throw new InvalidOperationException($"Basic Auth credentials with id '{id}' not found");
 
-        string password = _encryptionService.Decrypt(credentials.Password);
+        string password = _encryptionService.Decrypt(credentials.Secret!);
         string concat = credentials.Username + ':' + password;
         byte[] bytes = Encoding.UTF8.GetBytes(concat);
         string authInfo = "Basic " + Convert.ToBase64String(bytes);
@@ -89,10 +90,10 @@ public sealed class AuthService(PulseContext context, OAuth2CredentialsService t
 
     private async Task<AuthHeader?> GetApiKeyAuthenticationAsync(string id, CancellationToken token)
     {
-        var credentials = await _context.Credentials.FindApiKeyCredentialsAsync(id, token)
+        var credentials = await _credentialStore.GetAsync(id, CredentialType.ApiKey.ToString(), token)
                                     ?? throw new InvalidOperationException($"Basic Auth credentials with id '{id}' not found");
 
-        string password = _encryptionService.Decrypt(credentials.ApiKey);
-        return new(credentials.Header, password);
+        string password = _encryptionService.Decrypt(credentials.Secret!);
+        return new(credentials.Header!, password);
     }
 }

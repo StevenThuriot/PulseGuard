@@ -1,19 +1,28 @@
 ﻿using PulseGuard.Entities;
+using PulseGuard.Storage.Abstractions.Contracts;
 using System.Collections.Concurrent;
 
 namespace PulseGuard.Services;
 
-public sealed class OAuth2CredentialsService(PulseContext context, IHttpClientFactory httpClientFactory, EncryptionService encryptionService)
+public sealed class OAuth2CredentialsService(ICredentialStore credentialStore, IHttpClientFactory httpClientFactory, EncryptionService encryptionService)
 {
-    private readonly PulseContext _context = context;
+    private readonly ICredentialStore _credentialStore = credentialStore;
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
     private readonly EncryptionService _encryptionService = encryptionService;
     private readonly ConcurrentDictionary<OAuth2Credentials, TokenRequestClient> _clients = new(OAuth2CredentialsComparer.Instance);
 
     public async Task<ApiAccessToken> GetAsync(string id, CancellationToken token)
     {
-        var clientCredentials = await _context.Credentials.FindOAuth2CredentialsAsync(id, token)
+        var record = await _credentialStore.GetAsync(id, CredentialType.OAuth2.ToString(), token)
                                     ?? throw new InvalidOperationException($"Client credentials with id '{id}' not found");
+        OAuth2Credentials clientCredentials = new()
+        {
+            Id = record.Id,
+            TokenEndpoint = record.TokenEndpoint!,
+            ClientId = record.ClientId!,
+            ClientSecret = record.Secret!,
+            Scopes = record.Scopes
+        };
 
         clientCredentials.ClientSecret = _encryptionService.Decrypt(clientCredentials.ClientSecret);
         var client = _clients.GetOrAdd(clientCredentials, _ => new TokenRequestClient(_httpClientFactory, clientCredentials));

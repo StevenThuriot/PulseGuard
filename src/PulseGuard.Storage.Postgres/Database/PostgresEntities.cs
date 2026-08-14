@@ -113,3 +113,29 @@ internal sealed class DeploymentEntity
     public string? BuildNumber { get; set; }
     public ServiceEntity Service { get; set; } = null!;
 }
+
+internal sealed class CredentialEntity
+{
+    public long IdValue { get; set; }
+    public string Id { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public string? Username { get; set; }
+    public string? Secret { get; set; }
+    public string? Header { get; set; }
+    public string? TokenEndpoint { get; set; }
+    public string? ClientId { get; set; }
+    public string? Scopes { get; set; }
+}
+
+internal sealed class WebhookEntity
+{
+    public long IdValue { get; set; }
+    public string Id { get; set; } = string.Empty;
+    public string Secret { get; set; } = string.Empty;
+    public string Group { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string Location { get; set; } = string.Empty;
+    public bool Enabled { get; set; }
+    public string Type { get; set; } = string.Empty;
+    public string? AuthenticationId { get; set; }
+}

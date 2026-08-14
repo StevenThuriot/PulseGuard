@@ -40,6 +40,16 @@ public interface IDeploymentStore
     public Task<IReadOnlyList<DeploymentObservation>> GetDeploymentsAsync(string sqid, CancellationToken cancellationToken);
 }
 
+public interface ICredentialStore
+{
+    public Task<CredentialRecord?> GetAsync(string id, string type, CancellationToken cancellationToken);
+}
+
+public interface IWebhookStore
+{
+    public Task<IReadOnlyList<WebhookRecord>> GetEnabledAsync(CancellationToken cancellationToken);
+}
+
 public interface IStorageMaintenance
 {
     public Task RunAsync(CancellationToken cancellationToken);

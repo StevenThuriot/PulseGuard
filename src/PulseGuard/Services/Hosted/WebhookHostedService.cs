@@ -1,16 +1,18 @@
 ﻿using PulseGuard.Entities;
 using PulseGuard.Models;
 using SecureWebhooks;
+using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Models;
 using TableStorage.Linq;
 
 namespace PulseGuard.Services.Hosted;
 
-internal sealed class WebhookHostedService(WebhookService webhookClient, SignalService signalService, IHttpClientFactory factory, PulseContext context, AuthService authService, ILogger<WebhookHostedService> logger) : BackgroundService
+internal sealed class WebhookHostedService(WebhookService webhookClient, SignalService signalService, IHttpClientFactory factory, IWebhookStore webhookStore, AuthService authService, ILogger<WebhookHostedService> logger) : BackgroundService
 {
     private readonly WebhookService _webhookClient = webhookClient;
     private readonly SignalService _signalService = signalService;
     private readonly IHttpClientFactory _httpClientFactory = factory;
-    private readonly PulseContext _context = context;
+    private readonly IWebhookStore _webhookStore = webhookStore;
     private readonly AuthService _authService = authService;
     private readonly ILogger<WebhookHostedService> _logger = logger;
 
@@ -23,8 +25,10 @@ internal sealed class WebhookHostedService(WebhookService webhookClient, SignalS
                 await _signalService.WaitAsync(stoppingToken);
 
                 // Our search is not optimized on table side anyway, so it's most likely cheaper to just fetch all enabled webhooks and filter in memory
-                ILookup<WebhookType, Entities.Webhook> webhooks = await _context.Webhooks.Where(x => x.Enabled)
-                                                                                         .ToLookupAsync(x => x.Type, cancellationToken: stoppingToken);
+                IReadOnlyList<WebhookRecord> records = await _webhookStore.GetEnabledAsync(stoppingToken);
+                ILookup<WebhookType, Entities.Webhook> webhooks = records
+                    .Select(ToWebhook)
+                    .ToLookup(x => x.Type);
 
                 await HandleWebhooks(webhooks, stoppingToken);
             }
@@ -34,6 +38,18 @@ internal sealed class WebhookHostedService(WebhookService webhookClient, SignalS
             }
         }
     }
+
+    private static Entities.Webhook ToWebhook(WebhookRecord record) => new()
+    {
+        Id = record.Id,
+        Secret = record.Secret,
+        Group = record.Group,
+        Name = record.Name,
+        Location = record.Location,
+        Enabled = record.Enabled,
+        Type = Enum.Parse<WebhookType>(record.Type, true),
+        AuthenticationId = record.AuthenticationId
+    };
 
     private static IEnumerable<Entities.Webhook> FilterWebhooks(IEnumerable<Entities.Webhook> webhooks, string group, string name)
     {

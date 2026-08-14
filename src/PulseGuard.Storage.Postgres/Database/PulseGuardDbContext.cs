@@ -13,6 +13,8 @@ internal sealed class PulseGuardDbContext(DbContextOptions<PulseGuardDbContext> 
     internal DbSet<ServiceFailureCounterEntity> FailureCounters => Set<ServiceFailureCounterEntity>();
     internal DbSet<ServiceDailyHeatmapEntity> Heatmaps => Set<ServiceDailyHeatmapEntity>();
     internal DbSet<DeploymentEntity> Deployments => Set<DeploymentEntity>();
+    internal DbSet<CredentialEntity> Credentials => Set<CredentialEntity>();
+    internal DbSet<WebhookEntity> Webhooks => Set<WebhookEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -124,6 +126,25 @@ internal sealed class PulseGuardDbContext(DbContextOptions<PulseGuardDbContext> 
             entity.Property(x => x.CommitId).HasColumnName("commit_id");
             entity.Property(x => x.BuildNumber).HasColumnName("build_number");
             entity.HasOne(x => x.Service).WithMany().HasForeignKey(x => x.ServiceId);
+        });
+
+        modelBuilder.Entity<CredentialEntity>(entity =>
+        {
+            entity.ToTable("credentials");
+            entity.HasKey(x => x.IdValue);
+            entity.HasIndex(x => new { x.Id, x.Type }).IsUnique();
+            entity.Property(x => x.IdValue).HasColumnName("id_value");
+            entity.Property(x => x.TokenEndpoint).HasColumnName("token_endpoint");
+            entity.Property(x => x.ClientId).HasColumnName("client_id");
+        });
+
+        modelBuilder.Entity<WebhookEntity>(entity =>
+        {
+            entity.ToTable("webhooks");
+            entity.HasKey(x => x.IdValue);
+            entity.HasIndex(x => x.Id).IsUnique();
+            entity.Property(x => x.IdValue).HasColumnName("id_value");
+            entity.Property(x => x.AuthenticationId).HasColumnName("authentication_id");
         });
     }
 }

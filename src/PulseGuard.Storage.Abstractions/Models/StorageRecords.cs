@@ -77,6 +77,26 @@ public sealed record HeatmapRecord(
     int Unhealthy,
     int TimedOut);
 
+public sealed record CredentialRecord(
+    string Id,
+    string Type,
+    string? Username,
+    string? Secret,
+    string? Header,
+    string? TokenEndpoint,
+    string? ClientId,
+    string? Scopes);
+
+public sealed record WebhookRecord(
+    string Id,
+    string Secret,
+    string Group,
+    string Name,
+    string Location,
+    bool Enabled,
+    string Type,
+    string? AuthenticationId);
+
 public sealed record HealthHistoryQuery(
     string Sqid,
     DateTimeOffset? From = null,

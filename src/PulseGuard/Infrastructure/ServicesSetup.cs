@@ -38,5 +38,7 @@ internal static class ServicesSetup
     public static void ConfigureAzureApplicationStorage(this IServiceCollection services)
     {
         services.AddScoped<IServiceConfigurationStore, AzureServiceConfigurationStore>();
+        services.AddScoped<ICredentialStore, AzureCredentialStore>();
+        services.AddScoped<IWebhookStore, AzureWebhookStore>();
     }
 }

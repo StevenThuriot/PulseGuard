@@ -42,6 +42,8 @@ public static class PostgresStorageServiceCollectionExtensions
         services.AddSingleton<PulseGuard.Storage.Abstractions.Queues.IStorageWorkQueue, RabbitMqWorkQueue>();
         services.AddScoped<IServiceConfigurationStore, PostgresServiceConfigurationStore>();
         services.AddScoped<IHealthHistoryStore, PostgresHealthHistoryStore>();
+        services.AddScoped<ICredentialStore, PostgresCredentialStore>();
+        services.AddScoped<IWebhookStore, PostgresWebhookStore>();
 
         return services;
     }
