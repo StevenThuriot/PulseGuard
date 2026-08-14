@@ -1,5 +1,7 @@
 using PulseGuard.Entities;
 using PulseGuard.Models;
+using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Queues;
 using Xunit;
 
 namespace PulseGuard.Tests;
@@ -36,5 +38,12 @@ public sealed class LegacyStorageBehaviorTests
         Assert.Equal("20260814", partition);
         Assert.Equal("abc123", row);
         Assert.Contains("42", data.ToString());
+    }
+
+    [Fact]
+    public void StorageContracts_DoNotExposeProviderSpecificDeliveryTypes()
+    {
+        Assert.Equal(typeof(object), typeof(StorageQueueMessage).GetProperty(nameof(StorageQueueMessage.DeliveryHandle))!.PropertyType);
+        Assert.NotNull(typeof(IHealthHistoryStore).GetMethod(nameof(IHealthHistoryStore.RecordHealthObservationAsync)));
     }
 }

@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PulseGuard\PulseGuard.csproj" />
+    <ProjectReference Include="..\PulseGuard.Storage.Abstractions\PulseGuard.Storage.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>
