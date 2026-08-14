@@ -136,11 +136,21 @@ internal sealed class PostgresHealthHistoryStore(
     {
         switch (state)
         {
-            case "Healthy": heatmap.HealthyCount++; break;
-            case "Degraded": heatmap.DegradedCount++; break;
-            case "Unhealthy": heatmap.UnhealthyCount++; break;
-            case "TimedOut": heatmap.TimedOutCount++; break;
-            default: heatmap.UnknownCount++; break;
+            case "Healthy":
+                heatmap.HealthyCount++;
+                break;
+            case "Degraded":
+                heatmap.DegradedCount++;
+                break;
+            case "Unhealthy":
+                heatmap.UnhealthyCount++;
+                break;
+            case "TimedOut":
+                heatmap.TimedOutCount++;
+                break;
+            default:
+                heatmap.UnknownCount++;
+                break;
         }
     }
 }
