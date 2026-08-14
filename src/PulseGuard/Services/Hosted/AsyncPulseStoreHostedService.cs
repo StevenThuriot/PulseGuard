@@ -35,7 +35,6 @@ public sealed class AsyncPulseStoreHostedService(AsyncPulseStoreService storeCli
 
         if (count++ >= _cleaningInterval)
         {
-            await store.CleanRecent(cancellationToken);
             await Task.Delay(500, cancellationToken);
             count = 1;
         }
