@@ -1,6 +1,4 @@
-﻿using Azure;
-using Azure.Data.Tables;
-using PulseGuard.Agents;
+﻿using PulseGuard.Agents;
 using PulseGuard.Checks;
 using PulseGuard.Entities;
 using PulseGuard.Infrastructure;
@@ -10,8 +8,6 @@ using PulseGuard.Services;
 using PulseGuard.Services.Admin;
 using PulseGuard.Storage.Abstractions.Administration;
 using System.Security.Claims;
-using TableStorage;
-using TableStorage.Linq;
 
 namespace PulseGuard.Routes;
 
@@ -250,46 +246,26 @@ public static class AdminRoutes
 
         private void CreateOverviewMappings()
         {
-            builder.MapGet("", static async (PulseContext context, CancellationToken token) =>
-            {
-                var identifiers = await context.Settings.WhereUniqueIdentifier()
-                                               .SelectFields(x => new { x.Id, x.Group, x.Name })
-                                               .ToDictionaryAsync(x => x.Id, x => (x.Group, x.Name), cancellationToken: token);
-
-                PulseEntry? Create(string id, PulseEntryType type, string subType, bool enabled)
-                {
-                    if (!identifiers.TryGetValue(id, out var info))
-                    {
-                        return null;
-                    }
-
-                    return new PulseEntry(id, type, subType, info.Group, info.Name, enabled);
-                }
-
-                var configurations = context.Configurations
-                                            .SelectFields(x => new { x.Sqid, x.Type, x.Enabled })
-                                            .Select(x => Create(x.Sqid, PulseEntryType.Normal, x.Type.Stringify(), x.Enabled));
-
-                var agentConfigurations = context.AgentConfigurations
-                                                 .SelectFields(x => new { x.Sqid, x.Type, x.Enabled })
-                                                 .Select(x => Create(x.Sqid, PulseEntryType.Agent, x.Type, x.Enabled));
-
-                return await configurations.Concat(agentConfigurations)
-                                           .Where(x => x is not null)
-                                           .ToListAsync(token);
+             builder.MapGet("", static async (ConfigurationOverviewService service, CancellationToken token) =>
+             {
+                 IReadOnlyList<StoredConfigurationOverview> entries = await service.GetAsync(token);
+                 return entries.Select(x => new PulseEntry(x.Id, Enum.Parse<PulseEntryType>(x.Type, true), x.SubType, x.Group, x.Name, x.Enabled));
             });
 
-            builder.MapPut("{id}/name", static async (string id, PulseUpdateRequest entry, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
+             builder.MapPut("{id}/name", static async (string id, PulseUpdateRequest entry, PulseConfigurationAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
             {
                 if (entry is { Group: not null, Name: not null })
                 {
-                    await context.Settings.UpdateAsync(() => new UniqueIdentifier()
-                    {
-                        Id = id,
-                        Group = entry.Group,
-                        Name = entry.Name
-                    },
-                    token);
+                     StorageOperationResult result = await service.UpdateIdentifierAsync(new StoredServiceIdentifier(id, entry.Group, entry.Name), token);
+                     if (result.NotFound)
+                     {
+                         return Results.NotFound();
+                     }
+
+                     if (result.Conflict)
+                     {
+                         return Results.Conflict();
+                     }
 
                     logger.UpdatedPulseEntry(id, entry.Group, entry.Name);
                     return Results.NoContent();

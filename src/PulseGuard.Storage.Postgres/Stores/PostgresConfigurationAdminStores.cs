@@ -9,7 +9,14 @@ internal sealed class PostgresPulseConfigurationAdministrationStore(IDbContextFa
     public async Task<StoredPulseConfiguration?> GetAsync(string id, CancellationToken cancellationToken)
     {
         await using PulseGuardDbContext context = await factory.CreateDbContextAsync(cancellationToken);
-        return await context.PulseConfigurations.Where(x => x.Service.Sqid == id).Select(x => new StoredPulseConfiguration(x.Service.Sqid, x.Service.GroupName, x.Service.Name, x.CheckType, x.Location, x.TimeoutMilliseconds, x.DegradationTimeoutMilliseconds, x.Enabled, x.IgnoreSslErrors, x.ComparisonValue, x.Headers, null, null)).FirstOrDefaultAsync(cancellationToken);
+        PulseConfigurationEntity? configuration = await context.PulseConfigurations.Include(x => x.Service).FirstOrDefaultAsync(x => x.Service.Sqid == id, cancellationToken);
+        if (configuration is null)
+        {
+            return null;
+        }
+
+        (string? credentialType, string? credentialId) = GetCredential(configuration.AuthenticationId);
+        return new StoredPulseConfiguration(configuration.Service.Sqid, configuration.Service.GroupName, configuration.Service.Name, configuration.CheckType, configuration.Location, configuration.TimeoutMilliseconds, configuration.DegradationTimeoutMilliseconds, configuration.Enabled, configuration.IgnoreSslErrors, configuration.ComparisonValue, configuration.Headers, credentialType, credentialId);
     }
 
     public Task<StorageOperationResult> CreateAsync(CreatePulseConfigurationCommand command, CancellationToken cancellationToken) => WriteAsync(command.Configuration, false, cancellationToken);
@@ -62,10 +69,22 @@ internal sealed class PostgresPulseConfigurationAdministrationStore(IDbContextFa
         configuration.IgnoreSslErrors = value.IgnoreSslErrors;
         configuration.ComparisonValue = value.ComparisonValue;
         configuration.Headers = value.Headers;
+        configuration.AuthenticationId = SetCredential(value.CredentialType, value.CredentialId);
         context.Update(service);
         await context.SaveChangesAsync(cancellationToken);
         return StorageOperationResult.Success();
     }
+
+    private static (string? Type, string? Id) GetCredential(string? authenticationId)
+    {
+        int separator = authenticationId?.IndexOf('|') ?? -1;
+        return separator > 0 && separator < authenticationId!.Length - 1
+            ? (authenticationId[..separator], authenticationId[(separator + 1)..])
+            : (null, null);
+    }
+
+    private static string? SetCredential(string? type, string? id)
+        => string.IsNullOrEmpty(type) || string.IsNullOrEmpty(id) ? null : $"{type}|{id}";
 }
 
 internal sealed class PostgresAgentConfigurationAdministrationStore(IDbContextFactory<PulseGuardDbContext> factory) : IAgentConfigurationAdministrationStore
@@ -73,7 +92,14 @@ internal sealed class PostgresAgentConfigurationAdministrationStore(IDbContextFa
     public async Task<StoredAgentConfiguration?> GetAsync(string id, string type, CancellationToken cancellationToken)
     {
         await using PulseGuardDbContext context = await factory.CreateDbContextAsync(cancellationToken);
-        return await context.AgentConfigurations.Where(x => x.Sqid == id && x.Type == type).Select(x => new StoredAgentConfiguration(x.Sqid, x.Type, x.Location, x.ApplicationName, x.SubscriptionId, x.BuildDefinitionId, x.StageName, x.Enabled, x.Headers, null, null)).FirstOrDefaultAsync(cancellationToken);
+        AgentConfigurationEntity? configuration = await context.AgentConfigurations.FirstOrDefaultAsync(x => x.Sqid == id && x.Type == type, cancellationToken);
+        if (configuration is null)
+        {
+            return null;
+        }
+
+        (string? credentialType, string? credentialId) = GetCredential(configuration.AuthenticationId);
+        return new StoredAgentConfiguration(configuration.Sqid, configuration.Type, configuration.Location, configuration.ApplicationName, configuration.SubscriptionId, configuration.BuildDefinitionId, configuration.StageName, configuration.Enabled, configuration.Headers, credentialType, credentialId);
     }
 
     public Task<StorageOperationResult> CreateAsync(CreateAgentConfigurationCommand command, CancellationToken cancellationToken) => WriteAsync(command.Configuration, false, cancellationToken);
@@ -121,8 +147,20 @@ internal sealed class PostgresAgentConfigurationAdministrationStore(IDbContextFa
         entity.StageName = value.StageName;
         entity.Enabled = value.Enabled;
         entity.Headers = value.Headers;
+        entity.AuthenticationId = SetCredential(value.CredentialType, value.CredentialId);
         context.Update(entity);
         await context.SaveChangesAsync(cancellationToken);
         return StorageOperationResult.Success();
     }
+
+    private static (string? Type, string? Id) GetCredential(string? authenticationId)
+    {
+        int separator = authenticationId?.IndexOf('|') ?? -1;
+        return separator > 0 && separator < authenticationId!.Length - 1
+            ? (authenticationId[..separator], authenticationId[(separator + 1)..])
+            : (null, null);
+    }
+
+    private static string? SetCredential(string? type, string? id)
+        => string.IsNullOrEmpty(type) || string.IsNullOrEmpty(id) ? null : $"{type}|{id}";
 }

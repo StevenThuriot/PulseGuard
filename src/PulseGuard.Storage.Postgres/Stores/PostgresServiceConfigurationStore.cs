@@ -53,9 +53,9 @@ internal sealed class PostgresServiceConfigurationStore(
                 x.Type,
                 x.Location,
                 x.ApplicationName,
-                null,
-                null,
-                null,
+                x.SubscriptionId,
+                x.BuildDefinitionId,
+                x.StageName,
                 x.Enabled,
                 x.Headers,
                 x.AuthenticationId))

@@ -54,6 +54,7 @@ public static class PostgresStorageServiceCollectionExtensions
         services.AddScoped<IAgentConfigurationAdministrationStore, PostgresAgentConfigurationAdministrationStore>();
         services.AddScoped<IWebhookAdministrationStore, PostgresWebhookAdministrationStore>();
         services.AddScoped<IServiceIdentifierAdministrationStore, PostgresServiceIdentifierAdministrationStore>();
+        services.AddScoped<IConfigurationOverviewStore, PostgresConfigurationOverviewStore>();
 
         return services;
     }
