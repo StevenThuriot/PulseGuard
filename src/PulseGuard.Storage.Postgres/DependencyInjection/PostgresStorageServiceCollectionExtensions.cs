@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Administration;
 using PulseGuard.Storage.Postgres.Configuration;
 using PulseGuard.Storage.Postgres.Database;
 using PulseGuard.Storage.Postgres.RabbitMq;
@@ -47,6 +48,12 @@ public static class PostgresStorageServiceCollectionExtensions
         services.AddScoped<ICredentialStore, PostgresCredentialStore>();
         services.AddScoped<IWebhookStore, PostgresWebhookStore>();
         services.AddScoped<IUserStore, PostgresUserStore>();
+        services.AddScoped<ICredentialAdministrationStore, PostgresCredentialAdministrationStore>();
+        services.AddScoped<IUserAdministrationStore, PostgresUserAdministrationStore>();
+        services.AddScoped<IPulseConfigurationAdministrationStore, PostgresPulseConfigurationAdministrationStore>();
+        services.AddScoped<IAgentConfigurationAdministrationStore, PostgresAgentConfigurationAdministrationStore>();
+        services.AddScoped<IWebhookAdministrationStore, PostgresWebhookAdministrationStore>();
+        services.AddScoped<IServiceIdentifierAdministrationStore, PostgresServiceIdentifierAdministrationStore>();
 
         return services;
     }
