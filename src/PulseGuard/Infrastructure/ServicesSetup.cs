@@ -54,6 +54,9 @@ internal static class ServicesSetup
         services.AddScoped<IDeploymentStore, AzureDeploymentStore>();
         services.AddScoped<ICredentialAdministrationStore, AzureCredentialAdministrationStore>();
         services.AddScoped<IUserAdministrationStore, AzureUserAdministrationStore>();
+        services.AddScoped<IPulseConfigurationAdministrationStore, AzurePulseConfigurationAdministrationStore>();
+        services.AddScoped<IAgentConfigurationAdministrationStore, AzureAgentConfigurationAdministrationStore>();
+        services.AddScoped<IWebhookAdministrationStore, AzureWebhookAdministrationStore>();
         services.AddHostedService<AzureStorageCleanupHostedService>();
     }
 }
