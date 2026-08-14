@@ -147,37 +147,39 @@ public static class AdminRoutes
 
         private void CreateUserMappings()
         {
-            builder.MapGet("", static (PulseContext context) => context.Settings.WhereUser().Select(x => new UserEntry(x)));
+             builder.MapGet("", static async (UserAdministrationService service, CancellationToken token) =>
+             {
+                 IReadOnlyList<StoredUser> users = await service.GetAllAsync(token);
+                 return users.Select(x => new UserEntry(x.UserId, x.Nickname, x.Roles, x.LastVisited));
+             });
 
-            builder.MapGet("{id}", static async (string id, PulseContext context, CancellationToken token) =>
-            {
-                User? user = await context.Settings.FindUserAsync(id, token);
+             builder.MapGet("{id}", static async (string id, UserAdministrationService service, CancellationToken token) =>
+             {
+                 StoredUser? user = await service.GetAsync(id, token);
 
                 if (user is null)
                 {
                     return Results.NotFound();
                 }
 
-                UserEntry result = new(user);
+                 UserEntry result = new(user.UserId, user.Nickname, user.Roles, user.LastVisited);
                 return Results.Ok(result);
             });
 
-            builder.MapDelete("{id}", static async (string id, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                User? user = await context.Settings.FindUserAsync(id, token);
-
-                if (user is null)
+             builder.MapDelete("{id}", static async (string id, UserAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                 StorageOperationResult result = await service.DeleteAsync(id, token);
+                 if (result.NotFound)
                 {
                     return Results.NotFound();
                 }
 
-                await context.Settings.DeleteEntityAsync(user, token);
-                logger.DeletedUser(id);
+                 logger.DeletedUser(id);
 
                 return Results.NoContent();
             });
 
-            builder.MapPut("{id}", static async (string id, UserCreateOrUpdateRequest request, PulseContext context, ILogger<Program> logger, ClaimsPrincipal currentUser, CancellationToken token) =>
+             builder.MapPut("{id}", static async (string id, UserCreateOrUpdateRequest request, UserAdministrationService service, ILogger<Program> logger, ClaimsPrincipal currentUser, CancellationToken token) =>
             {
                 if (request.Roles is not null)
                 {
@@ -188,75 +190,61 @@ public static class AdminRoutes
                     }
                 }
 
-                User? user = await context.Settings.FindUserAsync(id, token);
+                 StoredUser? user = await service.GetAsync(id, token);
 
                 if (user is null)
                 {
                     return Results.NotFound();
                 }
 
-                user.Roles = request.GetRoles();
-                user.Nickname = request.Nickname;
+                 StoredUser update = user with
+                 {
+                     Roles = (request.GetRoles() ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                     Nickname = request.Nickname
+                 };
 
-                try
-                {
-                    await context.Settings.UpdateEntityAsync(user, user.ETag, TableUpdateMode.Replace, token);
-                    logger.UpdatedUser(user.UserId);
-                    return Results.NoContent();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorUpdatingUser(ex, user.UserId);
-                    return Results.Conflict();
-                }
+                 StorageOperationResult result = await service.UpdateAsync(update, token);
+                 if (result.Conflict)
+                 {
+                     logger.ErrorUpdatingUser(new InvalidOperationException("User update conflicted."), user.UserId);
+                     return Results.Conflict();
+                 }
+
+                 logger.UpdatedUser(user.UserId);
+                 return Results.NoContent();
             });
 
-            builder.MapPut("{id}/name", static async (string id, RenameUserRequest request, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                User? user = await context.Settings.FindUserAsync(id, token);
-
-                if (user is null)
+             builder.MapPut("{id}/name", static async (string id, RenameUserRequest request, UserAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                 StorageOperationResult result = await service.UpdateNameAsync(id, request.Nickname, token);
+                 if (result.NotFound)
                 {
                     return Results.NotFound();
                 }
 
-                user.Nickname = request.Nickname;
+                 if (result.Conflict)
+                 {
+                     logger.ErrorRenamingUser(new InvalidOperationException("User rename conflicted."), id);
+                     return Results.Conflict();
+                 }
 
-                try
-                {
-                    await context.Settings.UpdateEntityAsync(user, user.ETag, TableUpdateMode.Replace, token);
-                    logger.RenamedUser(id);
-
-                    return Results.NoContent();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorRenamingUser(ex, id);
-                    return Results.Conflict();
-                }
+                 logger.RenamedUser(id);
+                 return Results.NoContent();
             });
 
-            builder.MapPost("{id}", static async (string id, UserCreateOrUpdateRequest request, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                User user = new()
-                {
-                    UserId = id,
-                    Nickname = request.Nickname,
-                    Roles = request.GetRoles()
-                };
+             builder.MapPost("{id}", static async (string id, UserCreateOrUpdateRequest request, UserAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                  StoredUser user = new(id, request.Nickname, (request.GetRoles() ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries), null);
 
-                try
-                {
-                    await context.Settings.AddEntityAsync(user, token);
-                    logger.CreatedUser(user.UserId);
+                 StorageOperationResult result = await service.CreateAsync(user, token);
+                 if (result.Conflict)
+                 {
+                     logger.CreatedUser(user.UserId);
+                     return Results.Conflict();
+                 }
 
-                    return Results.Created();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorCreatingUser(ex, user.UserId);
-                    return Results.Conflict();
-                }
+                 logger.CreatedUser(user.UserId);
+                 return Results.Created();
             });
         }
 
