@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PulseGuard\PulseGuard.csproj" />
     <ProjectReference Include="..\PulseGuard.Storage.Abstractions\PulseGuard.Storage.Abstractions.csproj" />
+    <ProjectReference Include="..\PulseGuard.Storage.Azure\PulseGuard.Storage.Azure.csproj" />
   </ItemGroup>
 
 </Project>

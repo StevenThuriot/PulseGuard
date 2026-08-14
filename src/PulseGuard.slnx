@@ -13,4 +13,5 @@
   <Project Path="PulseGuard/PulseGuard.csproj" />
   <Project Path="PulseGuard.Tests/PulseGuard.Tests.csproj" />
   <Project Path="PulseGuard.Storage.Abstractions/PulseGuard.Storage.Abstractions.csproj" />
+  <Project Path="PulseGuard.Storage.Azure/PulseGuard.Storage.Azure.csproj" />
 </Solution>
