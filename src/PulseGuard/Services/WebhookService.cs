@@ -1,54 +1,47 @@
-﻿using Azure;
-using Azure.Storage.Queues;
-using Azure.Storage.Queues.Models;
-using Microsoft.Extensions.Options;
-using PulseGuard.Entities;
+﻿using PulseGuard.Entities;
 using PulseGuard.Models;
+using PulseGuard.Storage.Abstractions.Queues;
 using System.Runtime.CompilerServices;
 
 namespace PulseGuard.Services;
 
-public readonly record struct WebhookEventMessage(string Id, string PopReceipt, WebhookEventBase? WebhookEvent);
-
-public sealed class WebhookService(IOptions<PulseOptions> options, ILogger<WebhookService> logger)
+public readonly record struct WebhookEventMessage(StorageQueueMessage Message, WebhookEventBase? WebhookEvent)
 {
-    private readonly QueueClient _queueClient = new(options.Value.Store, "webhooks");
+    public string Id => Message.MessageId;
+}
+
+public sealed class WebhookService(IStorageWorkQueue queue, ILogger<WebhookService> logger)
+{
+    private readonly IStorageWorkQueue _queue = queue;
     private readonly ILogger<WebhookService> _logger = logger;
 
     public async IAsyncEnumerable<WebhookEventMessage> ReceiveMessagesAsync([EnumeratorCancellation] CancellationToken token)
     {
         while (!token.IsCancellationRequested)
         {
-            QueueMessage[] result = await _queueClient.ReceiveMessagesAsync(maxMessages: _queueClient.MaxPeekableMessages, cancellationToken: token);
-
-            if (result.Length == 0)
-            {
-                break;
-            }
-
-            foreach (QueueMessage message in result)
+            await foreach (StorageQueueMessage message in _queue.ReceiveAsync(StorageQueueName.Webhooks, token))
             {
                 WebhookEventBase? webhookEvent;
 
                 try
                 {
-                    webhookEvent = PulseSerializerContext.Default.WebhookEventBase.Deserialize(message.Body);
+                    webhookEvent = PulseSerializerContext.Default.WebhookEventBase.Deserialize(new BinaryData(message.Body));
                 }
                 catch (Exception ex)
                 {
-                    _logger.FailedToDeserializeWebhookEvent(ex, message.MessageId, message.Body.ToString());
+                    _logger.FailedToDeserializeWebhookEvent(ex, message.MessageId, new BinaryData(message.Body).ToString());
                     webhookEvent = null;
                 }
 
-                yield return new(message.MessageId, message.PopReceipt, webhookEvent);
+                yield return new(message, webhookEvent);
             }
         }
     }
 
     public async Task<bool> DeleteMessageAsync(WebhookEventMessage message)
     {
-        Response result = await _queueClient.DeleteMessageAsync(message.Id, message.PopReceipt, CancellationToken.None);
-        return !result.IsError;
+        await _queue.CompleteAsync(StorageQueueName.Webhooks, message.Message, CancellationToken.None);
+        return true;
     }
 
     public Task PostAsync(Pulse old, Pulse @new, PulseConfiguration options, CancellationToken token)
@@ -89,6 +82,6 @@ public sealed class WebhookService(IOptions<PulseOptions> options, ILogger<Webho
     private Task PostAsync(WebhookEventBase webhookEvent, CancellationToken token)
     {
         BinaryData data = new(PulseSerializerContext.Default.WebhookEventBase.SerializeToUtf8Bytes(webhookEvent));
-        return _queueClient.SendMessageAsync(data, cancellationToken: token);
+        return _queue.PublishAsync(StorageQueueName.Webhooks, data.ToMemory(), token);
     }
 }
