@@ -1,9 +1,11 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using PulseGuard.Storage.Abstractions.Contracts;
 using PulseGuard.Storage.Postgres.Configuration;
 using PulseGuard.Storage.Postgres.Database;
+using PulseGuard.Storage.Postgres.RabbitMq;
 
 namespace PulseGuard.Storage.Postgres.DependencyInjection;
 
@@ -25,10 +27,18 @@ public static class PostgresStorageServiceCollectionExtensions
                 .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString), "PostgreSQL connection string is required.")
                 .ValidateOnStart();
 
+        services.AddOptions<RabbitMqOptions>()
+                .Bind(configuration.GetSection("RabbitMq"))
+                .Validate(options => !string.IsNullOrWhiteSpace(options.Host), "RabbitMQ host is required.")
+                .Validate(options => options.Port is > 0 and <= 65535, "RabbitMQ port must be valid.")
+                .ValidateOnStart();
+
+        services.AddPooledDbContextFactory<PulseGuardDbContext>(options => options.UseNpgsql(connectionString));
         services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
         services.AddSingleton<PostgresSchemaInitializer>();
         services.AddSingleton<IStorageHealthCheck, PostgresStorageHealthCheck>();
         services.AddHostedService<PostgresSchemaHostedService>();
+        services.AddSingleton<PulseGuard.Storage.Abstractions.Queues.IStorageWorkQueue, RabbitMqWorkQueue>();
 
         return services;
     }
