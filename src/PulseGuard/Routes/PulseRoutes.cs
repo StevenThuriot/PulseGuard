@@ -2,8 +2,8 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using PulseGuard.Entities;
 using PulseGuard.Models;
-using TableStorage;
-using TableStorage.Linq;
+using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Models;
 
 namespace PulseGuard.Routes;
 
@@ -15,88 +15,65 @@ public static class PulseRoutes
         {
             RouteGroupBuilder group = builder.MapGroup("/api/1.0/pulses").WithTags("Pulses");
 
-            group.MapGet("", async (PulseContext context, CancellationToken token, [FromQuery] uint? minutes = null) =>
+            group.MapGet("", async (IHealthHistoryStore history, IServiceConfigurationStore configurations, CancellationToken token, [FromQuery] uint? minutes = null) =>
             {
-                uint minuteOffset = minutes ?? PulseContext.RecentMinutes;
+                uint minuteOffset = minutes ?? 720;
                 DateTimeOffset offset = DateTimeOffset.UtcNow.AddMinutes(-minuteOffset);
-
-                TableSet<Pulse> set = minuteOffset > PulseContext.RecentMinutes ? context.Pulses : context.RecentPulses;
-                ISelectedTableQueryable<Pulse> query = set.SelectFields(x => new { x.Sqid, x.Message, x.State, x.CreationTimestamp, x.LastUpdatedTimestamp });
-
-                if (minuteOffset is not PulseContext.RecentMinutes)
+                IReadOnlyDictionary<string, ServiceIdentifierRecord> identifiers = await configurations.GetServiceIdentifiersAsync(token);
+                List<HealthHistoryRecord> records = [];
+                foreach (ServiceIdentifierRecord identifier in identifiers.Values)
                 {
-                    query = query.Where(x => x.LastUpdatedTimestamp > offset);
+                    IReadOnlyList<HealthHistoryRecord> historyRecords = await history.GetHealthHistoryAsync(new(identifier.Id, offset, null), token);
+                    records.AddRange(historyRecords);
                 }
 
-                Dictionary<string, UniqueIdentifier> identifiers = await context.Settings.WhereUniqueIdentifier().ToDictionaryAsync(x => x.Id, cancellationToken: token);
-                
-                return await query.Select(x => (info: identifiers[x.Sqid], item: x))
-                            .GroupBy(x => x.info.Group ?? "")
-                            .Select(group =>
-                                new PulseOverviewGroup(group.Key, group.GroupBy(x => new { x.info.Id, x.info.Name })
-                                                                    .Select(pulses =>
-                                                                    {
-                                                                        var entries = pulses.Select(x => new PulseOverviewItem(x.item.State, x.item.Message, x.item.CreationTimestamp, x.item.LastUpdatedTimestamp));
-                                                                        return new PulseOverviewGroupItem(pulses.Key.Id, pulses.Key.Name, entries);
-                                                                    }))
-                            ).ToListAsync(token);
+                return records.GroupBy(x => x.Group)
+                    .Select(group => new PulseOverviewGroup(group.Key, group.Select(x => new PulseOverviewGroupItem(
+                        x.Sqid,
+                        x.Name,
+                        x.Items.Select(item => new PulseOverviewItem(Enum.Parse<PulseStates>(item.State, true), item.Message ?? string.Empty, item.Timestamp, item.Timestamp)).ToList()))))
+                    .ToList();
             });
 
-            group.MapGet("application/{id}", async Task<Results<Ok<PulseDetailGroupItem>, NotFound>> (string id, PulseContext context, CancellationToken token, [FromQuery] string? continuationToken = null, [FromQuery] int pageSize = 10) =>
+            group.MapGet("application/{id}", async Task<Results<Ok<PulseDetailGroupItem>, NotFound>> (string id, IHealthHistoryStore history, IServiceConfigurationStore configurations, CancellationToken token, [FromQuery] string? continuationToken = null, [FromQuery] int pageSize = 10) =>
             {
-                UniqueIdentifier? identifier = await context.Settings.FindUniqueIdentifierAsync(id, token);
+                ServiceIdentifierRecord? identifier = await configurations.GetServiceIdentifierAsync(id, token);
 
                 if (identifier is null)
                 {
                     return TypedResults.NotFound();
                 }
 
-                var query = context.Pulses.Where(x => x.Sqid == id);
-
-                if (!string.IsNullOrEmpty(continuationToken))
-                {
-                    long creationTimeSeconds = Pulse.ConvertToUnixTimeSeconds(continuationToken);
-                    var creationTimestamp = DateTimeOffset.FromUnixTimeSeconds(creationTimeSeconds);
-                    query = query.Where(x => x.CreationTimestamp < creationTimestamp);
-                }
-
-                List<Pulse> items = await query.Take(pageSize).ToListAsync(token);
+                DateTimeOffset? before = string.IsNullOrEmpty(continuationToken) ? null : DateTimeOffset.FromUnixTimeSeconds(Pulse.ConvertToUnixTimeSeconds(continuationToken));
+                IReadOnlyList<PulseStateRecord> items = await history.GetPulseHistoryAsync(id, before, pageSize, token);
 
                 if (items.Count is 0)
                 {
                     return TypedResults.NotFound();
                 }
 
-                var entries = items.Select(x => new PulseDetailItem(x.State, x.Message, x.CreationTimestamp, x.LastUpdatedTimestamp, x.Error));
+                var entries = items.Select(x => new PulseDetailItem(Enum.Parse<PulseStates>(x.State, true), x.Message ?? string.Empty, x.CreationTimestamp, x.LastUpdatedTimestamp, x.Error));
 
-                Pulse pulse = items[^1];
+                PulseStateRecord pulse = items[^1];
 
                 continuationToken = items.Count < pageSize
                                          ? null
-                                         : pulse.ContinuationToken;
+                                         : Pulse.CreateContinuationToken(pulse.CreationTimestamp);
 
                 PulseDetailGroupItem result = new(pulse.Sqid, identifier.Name, continuationToken, entries);
                 return TypedResults.Ok(result);
             });
 
-            group.MapGet("application/{id}/deployments", async Task<Results<NotFound, Ok<PulseDeployments>>> (string id, PulseContext context, CancellationToken token) =>
+            group.MapGet("application/{id}/deployments", async Task<Results<NotFound, Ok<PulseDeployments>>> (string id, IDeploymentStore deploymentsStore, CancellationToken token) =>
             {
-                var deployments = await context.Deployments.Where(x => x.Sqid == id)
-                                               .Select(x => new PulseDeployment(x.Status,
-                                                                                x.Start,
-                                                                                x.End,
-                                                                                x.Author,
-                                                                                x.Type,
-                                                                                x.CommitId,
-                                                                                x.BuildNumber))
-                                               .ToListAsync(token);
+                IReadOnlyList<DeploymentObservation> deployments = await deploymentsStore.GetDeploymentsAsync(id, token);
 
                 if (deployments.Count is 0)
                 {
                     return TypedResults.NotFound();
                 }
 
-                return TypedResults.Ok(new PulseDeployments(id, deployments));
+                return TypedResults.Ok(new PulseDeployments(id, deployments.Select(x => new PulseDeployment(x.Status, x.Start, x.End, x.Author, x.Type, x.CommitId, x.BuildNumber)).ToList()));
             });
         }
     }
