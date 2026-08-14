@@ -301,132 +301,95 @@ public static class AdminRoutes
 
         private void CreateWebhookMappings()
         {
-            builder.MapGet("", static (PulseContext context) => context.Webhooks.Select(x => new WebhookEntry(x.Id, x.Type, x.Group, x.Name, x.Location, x.Enabled, null)));
+             builder.MapGet("", static async (WebhookAdministrationService service, CancellationToken token) =>
+             {
+                 IReadOnlyList<StoredWebhook> webhooks = await service.GetAllAsync(token);
+                 return webhooks.Select(ToWebhookEntry);
+             });
 
-            builder.MapGet("{id}", static async (string id, PulseContext context, CancellationToken token) =>
-            {
-                var webhook = await context.Webhooks.Where(x => x.Id == id).FirstOrDefaultAsync(token);
-
-                if (webhook is null)
-                {
-                    return Results.NotFound();
-                }
-
-                var credential = ((IHaveCredentials)webhook).GetCredential();
-                CredentialOverview? credentialOverview;
-                if (credential.HasValue)
-                {
-                    var (credType, credId) = credential.GetValueOrDefault();
-                    credentialOverview = new(credType, credId);
-                }
-                else
-                {
-                    credentialOverview = null;
-                }
-
-                WebhookEntry entry = new(webhook.Id, webhook.Type, webhook.Group, webhook.Name, webhook.Location, webhook.Enabled, credentialOverview);
-
-                return Results.Ok(entry);
-            });
-
-            builder.MapDelete("{id}", static async (string id, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                var webhook = await context.Webhooks.Where(x => x.Id == id).FirstOrDefaultAsync(token);
+             builder.MapGet("{id}", static async (string id, WebhookAdministrationService service, CancellationToken token) =>
+             {
+                 StoredWebhook? webhook = await service.GetAsync(id, token);
 
                 if (webhook is null)
                 {
                     return Results.NotFound();
                 }
 
-                await context.Webhooks.DeleteEntityAsync(webhook, token);
-                logger.DeletedWebhookEntry(id);
+                 return Results.Ok(ToWebhookEntry(webhook));
+             });
+
+             builder.MapDelete("{id}", static async (string id, WebhookAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                 StorageOperationResult result = await service.DeleteAsync(id, token);
+                 if (result.NotFound)
+                {
+                    return Results.NotFound();
+                }
+
+                 logger.DeletedWebhookEntry(id);
 
                 return Results.NoContent();
             });
 
-            builder.MapPut("{id}", static async (string id, WebhookUpdateRequest request, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                var webhook = await context.Webhooks.Where(x => x.Id == id).FirstOrDefaultAsync(token);
-
-                if (webhook is null)
+             builder.MapPut("{id}", static async (string id, WebhookUpdateRequest request, WebhookAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                 StoredWebhook? existing = await service.GetAsync(id, token);
+                 if (existing is null)
                 {
                     return Results.NotFound();
                 }
 
-                webhook.Type = request.Type;
-                webhook.Group = request.Group;
-                webhook.Name = request.Name;
-                webhook.Location = request.Location;
-                webhook.Enabled = request.Enabled;
-                ((IHaveCredentials)webhook).SetCredential(request.Credential?.Type, request.Credential?.Id);
+                 StoredWebhook update = existing with
+                 {
+                     Type = request.Type.ToString(), Group = request.Group, Name = request.Name,
+                     Location = request.Location, Enabled = request.Enabled,
+                     CredentialType = request.Credential?.Type.ToString(), CredentialId = request.Credential?.Id
+                 };
+                 StorageOperationResult result = await service.UpdateAsync(update, token);
+                  if (result.Conflict)
+                  {
+                      logger.ErrorUpdatingWebhookEntry(new InvalidOperationException("Webhook update conflicted."), id);
+                      return Results.Conflict();
+                  }
 
-                try
-                {
-                    await context.Webhooks.UpdateEntityAsync(webhook, webhook.ETag, TableUpdateMode.Replace, token);
-                    logger.UpdatedWebhookEntry(id);
-
-                    return Results.NoContent();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorUpdatingWebhookEntry(ex, id);
-                    return Results.Conflict();
-                }
+                  logger.UpdatedWebhookEntry(id);
+                 return Results.NoContent();
             });
 
-            builder.MapPut("{id}/{enabled}", static async (string id, bool enabled, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                var webhook = await context.Webhooks.Where(x => x.Id == id).FirstOrDefaultAsync(token);
-
-                if (webhook is null)
+             builder.MapPut("{id}/{enabled}", static async (string id, bool enabled, WebhookAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                 StorageOperationResult result = await service.SetEnabledAsync(id, enabled, token);
+                 if (result.NotFound)
                 {
                     return Results.NotFound();
                 }
 
-                webhook.Enabled = enabled;
+                  if (result.Conflict)
+                  {
+                     logger.ErrorUpdatingWebhookEntry(new InvalidOperationException("Webhook update conflicted."), id);
+                      return Results.Conflict();
+                  }
 
-                try
-                {
-                    await context.Webhooks.UpdateEntityAsync(webhook, webhook.ETag, TableUpdateMode.Replace, token);
-                    logger.UpdatedWebhookEntry(id);
-
-                    return Results.NoContent();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorUpdatingWebhookEntry(ex, id);
-                    return Results.Conflict();
-                }
+                  logger.UpdatedWebhookEntry(id);
+                 return Results.NoContent();
             });
 
-            builder.MapPost("", static async (WebhookCreationRequest request, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                Webhook webhook = new()
-                {
-                    Id = Guid.CreateVersion7().ToString("N"),
-                    Secret = request.Secret,
-                    Type = request.Type,
-                    Group = request.Group,
-                    Name = request.Name,
-                    Location = request.Location,
-                    Enabled = request.Enabled
-                };
+             builder.MapPost("", static async (WebhookCreationRequest request, WebhookAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                 string id = Guid.CreateVersion7().ToString("N");
+                 StorageOperationResult result = await service.CreateAsync(new StoredWebhook(id, request.Secret, request.Type.ToString(), request.Group, request.Name, request.Location, request.Enabled, request.Credential?.Type.ToString(), request.Credential?.Id), token);
+                  if (result.Conflict)
+                  {
+                     logger.ErrorCreatingWebhookEntry(new InvalidOperationException("Webhook creation conflicted."));
+                      return Results.Conflict();
+                  }
 
-                ((IHaveCredentials)webhook).SetCredential(request.Credential?.Type, request.Credential?.Id);
+                  logger.CreatedWebhookEntry(id);
+                 return Results.Created();
+             });
 
-                try
-                {
-                    await context.Webhooks.AddEntityAsync(webhook, token);
-                    logger.CreatedWebhookEntry(webhook.Id);
-
-                    return Results.Created();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorCreatingWebhookEntry(ex);
-                    return Results.Conflict();
-                }
-            });
+             static WebhookEntry ToWebhookEntry(StoredWebhook x) => new(x.Id, Enum.Parse<WebhookType>(x.Type, true), x.Group, x.Name, x.Location, x.Enabled, x.CredentialType is null || x.CredentialId is null ? null : new CredentialOverview(Enum.Parse<CredentialType>(x.CredentialType, true), x.CredentialId));
         }
 
         private void CreateAgentMappings()
