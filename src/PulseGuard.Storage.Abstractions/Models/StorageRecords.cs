@@ -21,6 +21,9 @@ public sealed record AgentConfigurationRecord(
     string Type,
     string Location,
     string? ApplicationName,
+    string? SubscriptionId,
+    int? BuildDefinitionId,
+    string? StageName,
     bool Enabled,
     string? Headers,
     string? AuthenticationId);

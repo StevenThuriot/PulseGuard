@@ -47,6 +47,9 @@ internal sealed class PulseGuardDbContext(DbContextOptions<PulseGuardDbContext> 
             entity.HasIndex(x => new { x.Sqid, x.Type, x.ApplicationName }).IsUnique();
             entity.Property(x => x.ApplicationName).HasColumnName("application_name");
             entity.Property(x => x.AuthenticationId).HasColumnName("authentication_id");
+            entity.Property(x => x.SubscriptionId).HasColumnName("subscription_id");
+            entity.Property(x => x.BuildDefinitionId).HasColumnName("build_definition_id");
+            entity.Property(x => x.StageName).HasColumnName("stage_name");
         });
 
         modelBuilder.Entity<HealthCheckExecutionEntity>(entity =>

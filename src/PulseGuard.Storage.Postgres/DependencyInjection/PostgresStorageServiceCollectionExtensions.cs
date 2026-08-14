@@ -6,6 +6,7 @@ using PulseGuard.Storage.Abstractions.Contracts;
 using PulseGuard.Storage.Postgres.Configuration;
 using PulseGuard.Storage.Postgres.Database;
 using PulseGuard.Storage.Postgres.RabbitMq;
+using PulseGuard.Storage.Postgres.Stores;
 
 namespace PulseGuard.Storage.Postgres.DependencyInjection;
 
@@ -39,6 +40,7 @@ public static class PostgresStorageServiceCollectionExtensions
         services.AddSingleton<IStorageHealthCheck, PostgresStorageHealthCheck>();
         services.AddHostedService<PostgresSchemaHostedService>();
         services.AddSingleton<PulseGuard.Storage.Abstractions.Queues.IStorageWorkQueue, RabbitMqWorkQueue>();
+        services.AddScoped<IServiceConfigurationStore, PostgresServiceConfigurationStore>();
 
         return services;
     }

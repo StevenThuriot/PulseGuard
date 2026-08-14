@@ -2,6 +2,7 @@ using PulseGuard.Entities;
 using PulseGuard.Models;
 using PulseGuard.Storage.Abstractions.Contracts;
 using PulseGuard.Storage.Abstractions.Queues;
+using PulseGuard.Storage.Abstractions.Models;
 using Xunit;
 
 namespace PulseGuard.Tests;
@@ -45,5 +46,25 @@ public sealed class LegacyStorageBehaviorTests
     {
         Assert.Equal(typeof(object), typeof(StorageQueueMessage).GetProperty(nameof(StorageQueueMessage.DeliveryHandle))!.PropertyType);
         Assert.NotNull(typeof(IHealthHistoryStore).GetMethod(nameof(IHealthHistoryStore.RecordHealthObservationAsync)));
+    }
+
+    [Fact]
+    public void AgentConfigurationRecord_PreservesExternalAgentFields()
+    {
+        AgentConfigurationRecord record = new(
+            "sqid",
+            "WebAppDeployment",
+            "resource-group",
+            "application",
+            "subscription",
+            42,
+            "stage",
+            true,
+            null,
+            null);
+
+        Assert.Equal("subscription", record.SubscriptionId);
+        Assert.Equal(42, record.BuildDefinitionId);
+        Assert.Equal("stage", record.StageName);
     }
 }

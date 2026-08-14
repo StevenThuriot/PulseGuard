@@ -22,6 +22,9 @@ internal sealed class PulseConfigurationEntity
     public string? ComparisonValue { get; set; }
     public string? Headers { get; set; }
     public string? AuthenticationId { get; set; }
+    public string? SubscriptionId { get; set; }
+    public int? BuildDefinitionId { get; set; }
+    public string? StageName { get; set; }
     public ServiceEntity Service { get; set; } = null!;
 }
 
@@ -35,6 +38,9 @@ internal sealed class AgentConfigurationEntity
     public bool Enabled { get; set; }
     public string? Headers { get; set; }
     public string? AuthenticationId { get; set; }
+    public string? SubscriptionId { get; set; }
+    public int? BuildDefinitionId { get; set; }
+    public string? StageName { get; set; }
 }
 
 internal sealed class HealthCheckExecutionEntity
