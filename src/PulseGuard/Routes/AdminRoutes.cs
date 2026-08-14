@@ -394,150 +394,104 @@ public static class AdminRoutes
 
         private void CreateAgentMappings()
         {
-            builder.MapGet("{id}/{type}", static async (string id, string type, PulseContext context, CancellationToken token) =>
-            {
-                var configuration = await context.AgentConfigurations.Where(x => x.Sqid == id && x.Type == type).FirstOrDefaultAsync(token);
+             builder.MapGet("{id}/{type}", static async (string id, string type, AgentConfigurationAdministrationService service, CancellationToken token) =>
+             {
+                 StoredAgentConfiguration? configuration = await service.GetAsync(id, type, token);
 
                 if (configuration is null)
                 {
                     return Results.NotFound();
                 }
 
-                var credential = ((IHaveCredentials)configuration).GetCredential();
-                CredentialOverview? credentialOverview;
-                if (credential.HasValue)
-                {
-                    var (credType, credId) = credential.GetValueOrDefault();
-                    credentialOverview = new(credType, credId);
-                }
-                else
-                {
-                    credentialOverview = null;
-                }
-
-                return Results.Ok(new PulseAgentCreationRequest()
+                 return Results.Ok(new PulseAgentCreationRequest()
                 {
                     Location = configuration.Location,
-                    ApplicationName = configuration.ApplicationName,
-                    SubscriptionId = configuration.SubscriptionId,
+                     ApplicationName = configuration.ApplicationName ?? string.Empty,
+                     SubscriptionId = configuration.SubscriptionId ?? string.Empty,
                     BuildDefinitionId = configuration.BuildDefinitionId,
                     StageName = configuration.StageName,
                     Enabled = configuration.Enabled,
-                    Headers = configuration.GetHeaders().ToDictionary(x => x.name, x => x.values),
-                    Credential = credentialOverview
+                     Headers = ParseHeaders(configuration.Headers),
+                     Credential = ToCredentialOverview(configuration.CredentialType, configuration.CredentialId)
                 });
             });
 
-            builder.MapPut("{id}/{type}/{enabled}", static async (string id, string type, bool enabled, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                var config = await context.AgentConfigurations.FindAsync(id, type, token);
-                if (config is null)
+             builder.MapPut("{id}/{type}/{enabled}", static async (string id, string type, bool enabled, AgentConfigurationAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                 StorageOperationResult result = await service.SetEnabledAsync(id, type, enabled, token);
+                 if (result.NotFound)
                 {
                     return Results.NotFound();
                 }
 
-                config.Enabled = enabled;
+                  if (result.Conflict)
+                  {
+                     logger.ErrorUpdatingAgentConfigurationEnabled(new InvalidOperationException("Agent configuration update conflicted."), id, type, enabled);
+                      return Results.Conflict();
+                  }
 
-                try
-                {
-                    await context.AgentConfigurations.UpdateEntityAsync(config, token);
-
-                    logger.UpdatedAgentConfigurationEnabled(id, type, enabled);
-                    return Results.NoContent();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorUpdatingAgentConfigurationEnabled(ex, id, type, enabled);
-                    return Results.Conflict();
-                }
+                  logger.UpdatedAgentConfigurationEnabled(id, type, enabled);
+                 return Results.NoContent();
             });
 
-            builder.MapPost("{id}/{type}", static async (string id, string type, PulseAgentCreationRequest request, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
+             builder.MapPost("{id}/{type}", static async (string id, string type, PulseAgentCreationRequest request, AgentConfigurationAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
             {
                 if (request.IsInvalid(type, out string? validation))
                 {
                     return Results.BadRequest(validation);
                 }
 
-                PulseAgentConfiguration config = new()
-                {
-                    Sqid = id,
-                    Type = type,
-                    Location = request.Location,
-                    ApplicationName = request.ApplicationName,
-                    SubscriptionId = request.SubscriptionId,
-                    BuildDefinitionId = request.BuildDefinitionId,
-                    StageName = request.StageName,
-                    Enabled = request.Enabled,
-                    Headers = PulseAgentConfiguration.CreateHeaders(request.Headers)
-                };
+                 StorageOperationResult result = await service.CreateAsync(ToStoredAgentConfiguration(id, type, request), token);
+                  if (result.Conflict)
+                  {
+                      logger.ErrorCreatingAgentConfiguration(new InvalidOperationException("Agent configuration creation conflicted."), id, type);
+                      return Results.Conflict();
+                  }
 
-                ((IHaveCredentials)config).SetCredential(request.Credential?.Type, request.Credential?.Id);
-
-                try
-                {
-                    await context.AgentConfigurations.AddEntityAsync(config, token);
-
-                    logger.CreatedAgentConfiguration(id, type);
-                    return Results.Created();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorCreatingAgentConfiguration(ex, id, type);
-                    return Results.Conflict();
-                }
+                  logger.CreatedAgentConfiguration(id, type);
+                 return Results.Created();
             });
 
-            builder.MapPut("{id}/{type}", static async (string id, string type, PulseAgentCreationRequest request, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
+             builder.MapPut("{id}/{type}", static async (string id, string type, PulseAgentCreationRequest request, AgentConfigurationAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
             {
                 if (request.IsInvalid(type, out string? validation))
                 {
                     return Results.BadRequest(validation);
                 }
 
-                PulseAgentConfiguration config = new()
-                {
-                    Sqid = id,
-                    Type = type,
-                    Location = request.Location,
-                    ApplicationName = request.ApplicationName,
-                    SubscriptionId = request.SubscriptionId,
-                    BuildDefinitionId = request.BuildDefinitionId,
-                    StageName = request.StageName,
-                    Enabled = request.Enabled,
-                    Headers = PulseAgentConfiguration.CreateHeaders(request.Headers)
-                };
+                 StorageOperationResult result = await service.UpdateAsync(ToStoredAgentConfiguration(id, type, request), token);
+                  if (result.Conflict)
+                  {
+                      logger.ErrorUpdatingAgentConfiguration(new InvalidOperationException("Agent configuration update conflicted."), id, type);
+                      return Results.Conflict();
+                  }
 
-                ((IHaveCredentials)config).SetCredential(request.Credential?.Type, request.Credential?.Id);
-
-                try
-                {
-                    await context.AgentConfigurations.UpdateEntityAsync(config, ETag.All, TableUpdateMode.Replace, token);
-
-                    logger.UpdatedAgentConfiguration(id, type);
-                    return Results.Created();
-                }
-                catch (Exception ex)
-                {
-                    logger.ErrorUpdatingAgentConfiguration(ex, id, type);
-                    return Results.Conflict();
-                }
+                  logger.UpdatedAgentConfiguration(id, type);
+                 return Results.Created();
             });
 
-            builder.MapDelete("{id}/{type}", static async (string id, string type, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
-            {
-                var configuration = await context.AgentConfigurations.FindAsync(id, type, token);
-
-                if (configuration is null)
+             builder.MapDelete("{id}/{type}", static async (string id, string type, AgentConfigurationAdministrationService service, ILogger<Program> logger, CancellationToken token) =>
+             {
+                 StorageOperationResult result = await service.DeleteAsync(id, type, token);
+                 if (result.NotFound)
                 {
                     return Results.NotFound();
                 }
 
-                await context.AgentConfigurations.DeleteEntityAsync(configuration, token);
-
-                logger.DeletedAgentConfiguration(id, type);
+                 logger.DeletedAgentConfiguration(id, type);
                 return Results.NoContent();
-            });
+             });
+
+             static Dictionary<string, string> ParseHeaders(string? headers)
+                 => string.IsNullOrEmpty(headers)
+                     ? []
+                     : headers.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(x => x.Split(':', 2)).ToDictionary(x => x[0], x => x[1]);
+
+             static CredentialOverview? ToCredentialOverview(string? type, string? id)
+                 => type is null || id is null ? null : new CredentialOverview(Enum.Parse<CredentialType>(type, true), id);
+
+             static StoredAgentConfiguration ToStoredAgentConfiguration(string id, string type, PulseAgentCreationRequest request)
+                 => new(id, type, request.Location, request.ApplicationName, request.SubscriptionId, request.BuildDefinitionId, request.StageName, request.Enabled, PulseAgentConfiguration.CreateHeaders(request.Headers), request.Credential?.Type.ToString(), request.Credential?.Id);
         }
 
         private void CreateNormalMappings()
