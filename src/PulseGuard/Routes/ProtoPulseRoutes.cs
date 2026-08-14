@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Caching.Memory;
 using PulseGuard.Entities;
 using PulseGuard.Models;
+using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Models;
 using System.Data;
 using TableStorage.Linq;
 
@@ -19,27 +21,37 @@ public static class ProtoPulseRoutes
 
         private void CreateMetricsMappings()
         {
-            builder.MapGet("{id}", async Task<Results<ProtoResult, NotFound>> (string id, PulseContext context, IMemoryCache cache, CancellationToken token) =>
+            builder.MapGet("{id}", async Task<Results<ProtoResult, NotFound>> (string id, IAgentHistoryStore history, IMemoryCache cache, CancellationToken token) =>
             {
-                var results = await context.PulseAgentResults.Where(x => x.Sqid == id).OrderBy(x => x.Day).ToListAsync(token);
+                IReadOnlyList<AgentHistoryRecord> results = await history.GetAgentHistoryAsync(id, false, token);
 
                 if (results.Count is 0)
                 {
                     return TypedResults.NotFound();
                 }
 
-                var items = results.SelectMany(x => x.Items);
+                var items = results.SelectMany(x => x.Items).Select(x => new PulseAgentCheckResultDetail
+                {
+                    Timestamp = x.Timestamp.ToUnixTimeSeconds(),
+                    Cpu = x.CpuPercentage,
+                    Memory = x.MemoryPercentage,
+                    InputOutput = x.InputOutput
+                });
 
                 PulseMetricsResultGroup result = new(items);
                 return Proto.Result(result);
             });
 
-            builder.MapGet("{id}/archived", async Task<Results<ProtoResult, NotFound>> (string id, PulseContext context, IMemoryCache cache, CancellationToken token) =>
+            builder.MapGet("{id}/archived", async Task<Results<ProtoResult, NotFound>> (string id, IAgentHistoryStore history, IMemoryCache cache, CancellationToken token) =>
             {
-                var archivedItems = await cache.GetCached($"PulseMetrics-{id}", () => context.ArchivedPulseAgentResults.FindPartitionsAsync(id, token)
-                                                                                             .Select((string x, CancellationToken ct) => context.ArchivedPulseAgentResults.GetEntityAsync(x, id, ct).AsValue())
-                                                                                             .SelectMany(x => x!.Items)
-                                                                                             .ToListAsync(token));
+                IReadOnlyList<AgentHistoryRecord> results = await cache.GetCached($"PulseMetrics-{id}", async () => await history.GetAgentHistoryAsync(id, true, token));
+                var archivedItems = results.SelectMany(x => x.Items).Select(x => new PulseAgentCheckResultDetail
+                {
+                    Timestamp = x.Timestamp.ToUnixTimeSeconds(),
+                    Cpu = x.CpuPercentage,
+                    Memory = x.MemoryPercentage,
+                    InputOutput = x.InputOutput
+                }).ToList();
 
                 PulseMetricsResultGroup result = new(archivedItems);
                 return Proto.ImmutableResult(result);
@@ -48,60 +60,60 @@ public static class ProtoPulseRoutes
 
         private void CreatePulseMappings()
         {
-            builder.MapGet("details/{id}", async Task<Results<ProtoResult, NotFound>> (string id, PulseContext context, IMemoryCache cache, CancellationToken token) =>
+            builder.MapGet("details/{id}", async Task<Results<ProtoResult, NotFound>> (string id, IServiceConfigurationStore configurations, IHealthHistoryStore history, IMemoryCache cache, CancellationToken token) =>
             {
-                var info = await context.Settings.FindUniqueIdentifierAsync(id, token);
+                ServiceIdentifierRecord? info = await configurations.GetServiceIdentifierAsync(id, token);
 
                 if (info is null)
                 {
                     return TypedResults.NotFound();
                 }
 
-                var results = await context.PulseCheckResults.Where(x => x.Sqid == id).OrderBy(x => x.Day).ToListAsync(token);
+                IReadOnlyList<HealthHistoryRecord> results = await history.GetHealthHistoryAsync(new(id), token);
 
                 if (results.Count is 0)
                 {
                     return TypedResults.NotFound();
                 }
 
-                var items = results.SelectMany(x => x.Items);
+                var items = results.SelectMany(x => x.Items).Select(x => new PulseCheckResultDetail
+                {
+                    State = Enum.Parse<PulseStates>(x.State, true),
+                    Timestamp = x.Timestamp.ToUnixTimeSeconds(),
+                    ElapsedMilliseconds = x.ElapsedMilliseconds
+                });
 
-                PulseDetailResultGroup result = new(info.Group, info.Name, items);
+                PulseDetailResultGroup result = new(info.Group ?? string.Empty, info.Name, items);
 
                 return Proto.Result(result);
             });
 
-            builder.MapGet("details/{id}/archived", async Task<Results<ProtoResult, NotFound>> (string id, PulseContext context, IMemoryCache cache, CancellationToken token) =>
+            builder.MapGet("details/{id}/archived", async Task<Results<ProtoResult, NotFound>> (string id, IServiceConfigurationStore configurations, IHealthHistoryStore history, IMemoryCache cache, CancellationToken token) =>
             {
-                var info = await context.Settings.FindUniqueIdentifierAsync(id, token);
+                ServiceIdentifierRecord? info = await configurations.GetServiceIdentifierAsync(id, token);
 
                 if (info is null)
                 {
                     return TypedResults.NotFound();
                 }
 
-                var archivedItems = await cache.GetCached($"PulseDetals-{id}", () => context.ArchivedPulseCheckResults.FindPartitionsAsync(id, token)
-                                                                                            .Select((string x, CancellationToken ct) => context.ArchivedPulseCheckResults.GetEntityAsync(x, id, ct).AsValue())
-                                                                                            .SelectMany(x => x!.Items)
-                                                                                            .ToListAsync(token));
+                IReadOnlyList<HealthHistoryRecord> results = await cache.GetCached($"PulseDetals-{id}", async () => await history.GetHealthHistoryAsync(new(id), token));
+                var archivedItems = results.SelectMany(x => x.Items).Select(x => new PulseCheckResultDetail
+                {
+                    State = Enum.Parse<PulseStates>(x.State, true),
+                    Timestamp = x.Timestamp.ToUnixTimeSeconds(),
+                    ElapsedMilliseconds = x.ElapsedMilliseconds
+                }).ToList();
 
-                PulseDetailResultGroup result = new(info.Group, info.Name, archivedItems);
+                PulseDetailResultGroup result = new(info.Group ?? string.Empty, info.Name, archivedItems);
 
                 return Proto.ImmutableResult(result);
             });
 
-            builder.MapGet("heatmap/{id}", async Task<Results<NotFound, ProtoResult>> (string id, PulseContext context, CancellationToken token) =>
+            builder.MapGet("heatmap/{id}", async Task<Results<NotFound, ProtoResult>> (string id, IHealthHistoryStore history, CancellationToken token) =>
             {
-                var entries = await context.Heatmaps.Where(x => x.Sqid == id)
-                                           .OrderBy(x => x.Day)
-                                           .TakeLast(370)
-                                           .Select(x => new PulseHeatmap(x.Day,
-                                                                         x.Unknown,
-                                                                         x.Healthy,
-                                                                         x.Degraded,
-                                                                         x.Unhealthy,
-                                                                         x.TimedOut))
-                                            .ToListAsync(token);
+                IReadOnlyList<HeatmapRecord> heatmaps = await history.GetHeatmapAsync(id, 370, token);
+                List<PulseHeatmap> entries = [.. heatmaps.Select(x => new PulseHeatmap(x.Day, x.Unknown, x.Healthy, x.Degraded, x.Unhealthy, x.TimedOut))];
 
                 if (entries.Count is 0)
                 {

@@ -3,6 +3,8 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using PulseGuard.Entities;
 using PulseGuard.Models;
+using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Models;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Mime;
@@ -32,7 +34,7 @@ public static class HealthRoutes
 
             var healthGroup = builder.MapGroup("/health").WithTags("Health");
 
-            healthGroup.MapGet("", async (IMemoryCache cache, PulseContext context, ILogger<Program> logger, CancellationToken token) =>
+            healthGroup.MapGet("", async (IMemoryCache cache, IStorageHealthCheck storageHealth, ILogger<Program> logger, CancellationToken token) =>
             {
                 PulseStates state = await cache.GetOrCreateAsync("health", async entry =>
                 {
@@ -45,7 +47,7 @@ public static class HealthRoutes
                         cts.CancelAfter(5000);
 
                         var sw = Stopwatch.StartNew();
-                        _ = await context.Configurations.FirstOrDefaultAsync(cts.Token);
+                        await storageHealth.CheckAsync(cts.Token);
 
                         state = sw.ElapsedMilliseconds > 1000
                                   ? PulseStates.Degraded
@@ -65,22 +67,25 @@ public static class HealthRoutes
             })
             .AllowAnonymous();
 
-            healthGroup.MapGet("applications", async (IOptions<PulseOptions> options, PulseContext context, CancellationToken token) =>
+            healthGroup.MapGet("applications", async (IOptions<PulseOptions> options, IServiceConfigurationStore configurations, IHealthHistoryStore history, CancellationToken token) =>
             {
-                var uniqueIdentifiers = await context.Settings.WhereUniqueIdentifier()
-                                                     .SelectFields(x => new { x.Id, x.Group, x.Name })
-                                                     .ToDictionaryAsync(x => x.Id, cancellationToken: token);
+                IReadOnlyDictionary<string, ServiceIdentifierRecord> uniqueIdentifiers = await configurations.GetServiceIdentifiersAsync(token);
 
                 DateTimeOffset offset = GetOffset(options.Value.Interval);
-                return await context.RecentPulses.Where(x => x.LastUpdatedTimestamp > offset)
-                                    .SelectFields(x => new { x.Sqid, x.State, x.LastUpdatedTimestamp })
-                                    .GroupBy(x => uniqueIdentifiers[x.Sqid].GetFullName())
-                                    .Select(x => x.OrderByDescending(y => y.LastUpdatedTimestamp).Select(y => (Name: x.Key, y.State)).First())
-                                    .OrderBy(x => x.Name)
-                                    .ToDictionaryAsync(cancellationToken: token);
+                Dictionary<string, PulseStates> result = [];
+                foreach (ServiceIdentifierRecord identifier in uniqueIdentifiers.Values)
+                {
+                    PulseStateRecord? current = await history.GetCurrentPulseAsync(identifier.Id, token);
+                    if (current is not null && current.LastUpdatedTimestamp > offset)
+                    {
+                        result[identifier.Group is null ? identifier.Name : $"{identifier.Group}/{identifier.Name}"] = Enum.Parse<PulseStates>(current.State, true);
+                    }
+                }
+
+                return result.OrderBy(x => x.Key).ToDictionary();
             });
 
-            healthGroup.MapGet("query", async ([FromQuery(Name = "id")] string[] ids, IOptions<PulseOptions> options, PulseContext context, CancellationToken token) =>
+            healthGroup.MapGet("query", async ([FromQuery(Name = "id")] string[] ids, IOptions<PulseOptions> options, IHealthHistoryStore history, CancellationToken token) =>
             {
                 if (ids is not { Length: > 0 })
                 {
@@ -88,13 +93,16 @@ public static class HealthRoutes
                 }
 
                 DateTimeOffset offset = GetOffset(options.Value.Interval);
-                var state = await context.RecentPulses
-                                         .ExistsIn(x => x.Sqid, ids)
-                                         .Where(x => x.LastUpdatedTimestamp > offset)
-                                         .SelectFields(x => new { x.Sqid, x.State, x.LastUpdatedTimestamp })
-                                         .GroupBy(x => x.Sqid)
-                                         .Select(x => x.OrderByDescending(y => y.LastUpdatedTimestamp).Select(y => y.State).First())
-                                         .AggregateAsync(PulseStates.Unknown, (current, state) => current < state ? state : current, cancellationToken: token);
+                PulseStates state = PulseStates.Unknown;
+                foreach (string id in ids)
+                {
+                    PulseStateRecord? current = await history.GetCurrentPulseAsync(id, token);
+                    if (current is not null && current.LastUpdatedTimestamp > offset)
+                    {
+                        PulseStates candidate = Enum.Parse<PulseStates>(current.State, true);
+                        state = state < candidate ? candidate : state;
+                    }
+                }
 
                 HttpStatusCode code = MapToStatusCode(state);
                 return Results.Text(state.Stringify(), MediaTypeNames.Text.Plain, Encoding.Default, (int)code);
