@@ -1,6 +1,5 @@
-﻿using PulseGuard.Entities;
-using PulseGuard.Models;
-using TableStorage.Linq;
+﻿using PulseGuard.Models;
+using PulseGuard.Storage.Abstractions.Contracts;
 
 namespace PulseGuard.Routes;
 
@@ -14,23 +13,19 @@ public static class BadgeRoutes
         {
             var group = builder.MapGroup("/1.0/badges").WithTags("Badges");
 
-            group.MapGet("{id}", async (string id, PulseContext context, IHttpClientFactory clientFactory, HttpContext httpContext, CancellationToken token) =>
+            group.MapGet("{id}", async (string id, IServiceConfigurationStore configurations, IHealthHistoryStore history, IHttpClientFactory clientFactory, HttpContext httpContext, CancellationToken token) =>
             {
-
-                UniqueIdentifier? identifier = await context.Settings.FindUniqueIdentifierAsync(id, token);
+                var identifier = await configurations.GetServiceIdentifierAsync(id, token);
 
                 if (identifier is null)
                 {
                     return UnknownBadge();
                 }
 
-                PulseStates state = await context.RecentPulses.Where(x => x.Sqid == id)
-                                                 .SelectFields(x => new { x.State })
-                                                 .Take(1)
-                                                 .Select(x => x.State)
-                                                 .FirstOrDefaultAsync(token);
+                var current = await history.GetCurrentPulseAsync(id, token);
+                PulseStates state = current is null ? PulseStates.Unknown : Enum.Parse<PulseStates>(current.State, true);
 
-                string name = identifier.GetFullName()
+                string name = (identifier.Group is null ? identifier.Name : $"{identifier.Group}/{identifier.Name}")
                                         .Replace("_", "__")
                                         .Replace("-", "--")
                                         .Replace(" ", "_");

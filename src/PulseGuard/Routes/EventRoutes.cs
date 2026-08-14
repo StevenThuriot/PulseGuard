@@ -2,6 +2,8 @@
 using PulseGuard.Entities;
 using PulseGuard.Models;
 using PulseGuard.Services;
+using PulseGuard.Storage.Abstractions.Contracts;
+using PulseGuard.Storage.Abstractions.Models;
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using TableStorage.Linq;
@@ -16,20 +18,20 @@ public static class EventRoutes
         {
             RouteGroupBuilder group = builder.MapGroup("/api/1.0/pulses/events").WithTags("Events");
 
-            group.MapGet("", (IPulseRegistrationService pulseEventService, IOptions<PulseOptions> options, PulseContext context, CancellationToken token)
-                                => TypedResults.ServerSentEvents(ListenForNewPulses(options, context, pulseEventService, null, token)));
+            group.MapGet("", (IPulseRegistrationService pulseEventService, IOptions<PulseOptions> options, IServiceConfigurationStore configurations, IHealthHistoryStore history, CancellationToken token)
+                                => TypedResults.ServerSentEvents(ListenForNewPulses(options, configurations, history, pulseEventService, null, token)));
 
-            group.MapGet("application/{application}", (IPulseRegistrationService pulseEventService, IOptions<PulseOptions> options, PulseContext context, string application, CancellationToken token)
-                                => TypedResults.ServerSentEvents(ListenForNewPulses(options, context, pulseEventService, x => x.Id == application, token)));
+            group.MapGet("application/{application}", (IPulseRegistrationService pulseEventService, IOptions<PulseOptions> options, IServiceConfigurationStore configurations, IHealthHistoryStore history, string application, CancellationToken token)
+                                => TypedResults.ServerSentEvents(ListenForNewPulses(options, configurations, history, pulseEventService, x => x.Id == application, token)));
 
-            group.MapGet("group/{group}", (IPulseRegistrationService pulseEventService, IOptions<PulseOptions> options, PulseContext context, string group, CancellationToken token)
-                                            => TypedResults.ServerSentEvents(ListenForNewPulses(options, context, pulseEventService, x => x.Group == group, token)));
+            group.MapGet("group/{group}", (IPulseRegistrationService pulseEventService, IOptions<PulseOptions> options, IServiceConfigurationStore configurations, IHealthHistoryStore history, string group, CancellationToken token)
+                                            => TypedResults.ServerSentEvents(ListenForNewPulses(options, configurations, history, pulseEventService, x => x.Group == group, token)));
         }
     }
 
-    private static async IAsyncEnumerable<PulseEventInfo> ListenForNewPulses(IOptions<PulseOptions> options, PulseContext context, IPulseRegistrationService pulseEventService, Func<PulseEventInfo, bool>? filter, [EnumeratorCancellation] CancellationToken token)
+    private static async IAsyncEnumerable<PulseEventInfo> ListenForNewPulses(IOptions<PulseOptions> options, IServiceConfigurationStore configurations, IHealthHistoryStore history, IPulseRegistrationService pulseEventService, Func<PulseEventInfo, bool>? filter, [EnumeratorCancellation] CancellationToken token)
     {
-        await foreach (PulseEventInfo existingPulse in await ProcessLastEvents(options, context, token))
+        await foreach (PulseEventInfo existingPulse in await ProcessLastEvents(options, configurations, history, token))
         {
             if (filter is null || filter(existingPulse))
             {
@@ -49,26 +51,30 @@ public static class EventRoutes
         }
     }
 
-    private static async Task<IAsyncEnumerable<PulseEventInfo>> ProcessLastEvents(IOptions<PulseOptions> options, PulseContext context, CancellationToken token)
+    private static async Task<IAsyncEnumerable<PulseEventInfo>> ProcessLastEvents(IOptions<PulseOptions> options, IServiceConfigurationStore configurations, IHealthHistoryStore history, CancellationToken token)
     {
         DateTimeOffset offset = DateTimeOffset.UtcNow.AddMinutes(-options.Value.Interval * 2.5);
+        IReadOnlyDictionary<string, ServiceIdentifierRecord> identifiers = await configurations.GetServiceIdentifiersAsync(token);
+        List<PulseEventInfo> result = [];
+        foreach (ServiceIdentifierRecord identifier in identifiers.Values)
+        {
+            PulseStateRecord? current = await history.GetCurrentPulseAsync(identifier.Id, token);
+            if (current is not null && current.LastUpdatedTimestamp > offset)
+            {
+                result.Add(new PulseEventInfo(identifier.Id, identifier.Group ?? string.Empty, identifier.Name, Enum.Parse<PulseStates>(current.State, true), current.LastUpdatedTimestamp, current.LastElapsedMilliseconds ?? 0));
+            }
+        }
 
-        var identifiers = await context.Settings
-                                       .WhereUniqueIdentifier()
-                                       .ToDictionaryAsync(x => x.Id, cancellationToken: token);
+        return Enumerate(result);
 
-        return context.RecentPulses.Where(x => x.LastUpdatedTimestamp > offset)
-                           .SelectFields(x => new { x.Sqid, x.State, x.LastUpdatedTimestamp, x.LastElapsedMilliseconds })
-                           .Select(x => (info: identifiers[x.Sqid], item: x))
-                           .GroupBy(x => (x.info.Group, x.info.Id))
-                           .Select(x => x.OrderByDescending(y => y.item.LastUpdatedTimestamp)
-                                         .Select(x => new PulseEventInfo(x.info.Id,
-                                                                         x.info.Group,
-                                                                         x.info.Name,
-                                                                         x.item.State,
-                                                                         x.item.LastUpdatedTimestamp,
-                                                                         x.item.LastElapsedMilliseconds.GetValueOrDefault()))
-                                         .First());
+        static async IAsyncEnumerable<PulseEventInfo> Enumerate(IEnumerable<PulseEventInfo> items)
+        {
+            foreach (PulseEventInfo item in items)
+            {
+                yield return item;
+                await Task.Yield();
+            }
+        }
     }
 
     private sealed class FilteredPulseEventListener(Func<PulseEventInfo, bool> filter) : PulseEventListener
